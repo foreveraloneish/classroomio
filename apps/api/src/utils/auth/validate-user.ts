@@ -1,21 +1,19 @@
-import { User } from '@supabase/supabase-js';
-import { getSupabase } from '../supabase';
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { prisma } from "@cio/database";
 
-const supabase = getSupabase();
+const auth = betterAuth({
+    database: prismaAdapter(prisma, {
+        provider: "postgresql"
+    })
+});
 
-export async function validateUser(accessToken: string): Promise<User> {
-  let user: User | null = null;
+export async function validateUser(headers: Headers) {
+    const session = await auth.api.getSession({ headers });
 
-  try {
-    const { data } = await supabase.auth.getUser(accessToken);
-    user = data.user;
-  } catch (error) {
-    console.error(error);
-  }
+    if (!session) {
+        throw new Error('Unauthenticated user');
+    }
 
-  if (!user) {
-    throw new Error('Unauthenticated user');
-  }
-
-  return user;
+    return session.user;
 }

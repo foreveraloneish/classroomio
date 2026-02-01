@@ -4,13 +4,8 @@ import { zValidator } from '@hono/zod-validator';
 import { cloneCourse } from '$src/services/course/clone';
 import { authMiddleware } from '$src/middlewares/auth';
 import type { CloneCourseResponse, CloneCourseErrorResponse } from '$src/types/database';
-import type { User } from '@supabase/supabase-js';
 
-type Variables = {
-  user: User;
-};
-
-export const cloneRouter = new Hono<{ Variables: Variables }>().post(
+export const cloneRouter = new Hono<{ Variables: { user: any } }>().post(
   '/',
   authMiddleware,
   zValidator('json', ZCourseClone),
@@ -27,7 +22,7 @@ export const cloneRouter = new Hono<{ Variables: Variables }>().post(
 
       const successResponse: CloneCourseResponse = {
         success: true,
-        course: newCourse
+        course: newCourse as any
       };
       return c.json(successResponse, 200);
     } catch (error) {

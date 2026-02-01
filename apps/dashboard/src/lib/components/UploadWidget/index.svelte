@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte';
   import Tabs from '$lib/components/Tabs/index.svelte';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import TabContent from '$lib/components/TabContent/index.svelte';
   import { snackbar } from '../Snackbar/store';
   import Modal from '$lib/components/Modal/index.svelte';
@@ -10,10 +9,10 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { t } from '$lib/utils/functions/translations';
   import { validateImageUpload } from '$lib/utils/functions/fileValidation';
+  import { uploadFile } from '$lib/utils/services/storage';
 
   export let imageURL = '';
 
-  const supabase = getSupabase();
   const dispatch = createEventDispatcher();
   const tabs = [
     { label: 'Unsplash', value: 'unsplash' },
@@ -78,21 +77,19 @@
     if (!image) {
       return;
     }
-    const filename = `uploadwidget/${Date.now()}` + image.name;
-    const { data } = await supabase.storage.from('avatars').upload(filename, image, {
-      cacheControl: '3600',
-      upsert: false
-    });
 
-    if (data) {
-      const { data: response } = await supabase.storage.from('avatars').getPublicUrl(filename);
-      imageURL = response.publicUrl;
-      dispatch('change');
+    try {
+        const { publicUrl } = await uploadFile(image, 'avatars');
+        imageURL = publicUrl;
+        dispatch('change');
+        snackbar.success(`snackbar.landing_page_settings.success.complete`);
+        $handleOpenWidget.open = false;
+    } catch (e) {
+        console.error(e);
+        snackbar.error($t('components.upload_widget.upload_error'));
+    } finally {
+        isUploading = false;
     }
-    isUploading = false;
-
-    snackbar.success(`snackbar.landing_page_settings.success.complete`);
-    $handleOpenWidget.open = false;
   };
 
   function handleUpload() {

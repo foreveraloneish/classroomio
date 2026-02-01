@@ -5,10 +5,9 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { t } from '$lib/utils/functions/translations';
   import { currentOrg } from '$lib/utils/store/org';
-  import type { SupabaseClient } from '@supabase/supabase-js';
   import GoogleIconColored from '../Icons/GoogleIconColored.svelte';
+  import { authClient } from '$lib/auth-client';
 
-  export let supabase: SupabaseClient;
   export let handleSubmit = () => {};
   export let isLogin = true;
   export let showOnlyContent = false;
@@ -35,11 +34,9 @@
 
     try {
       console.log('signInWithGoogle');
-      const { error, data } = await supabase.auth.signInWithOAuth({
+      const { error, data } = await authClient.signIn.social({
         provider: 'google',
-        options: {
-          redirectTo
-        }
+        callbackURL: redirectTo
       });
 
       console.log('data', data);

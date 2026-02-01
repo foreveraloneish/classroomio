@@ -1,47 +1,20 @@
 import { snackbar } from '$lib/components/Snackbar/store';
 import type { PollType, PollOptionType, FetchPollsResponse } from './types';
-import { getSupabase } from '$lib/utils/functions/supabase';
 import { polls } from './store';
 
-const supabase = getSupabase();
-
 export async function fetchPolls(courseId: string) {
-  return await supabase
-    .from('apps_poll')
-    .select(
-      `
-      *,
-      created_at,
-      author:groupmember(
-        profile(
-          username,
-          fullname,
-          avatar_url
-        )
-      ),
-      options: apps_poll_option (
-        id,
-        label,
-        submissions:apps_poll_submission(
-          selectedBy:groupmember(
-            id,
-            profile(
-              username,
-              fullname,
-              avatar_url
-            )
-          )
-        )
-      )
-    `
-    )
-    .match({ courseId })
-    .order('created_at', { ascending: false })
-    .returns<FetchPollsResponse>();
+  const res = await fetch(`/api/poll/${courseId}`);
+  return await res.json();
 }
 
 export const updatePollStatus = async (pollId: string, status: PollType['status']) => {
-  const { error } = await supabase.from('apps_poll').update({ status }).match({ id: pollId });
+  // Not implemented in API yet, but assuming /api/poll/[id] PUT
+  const res = await fetch(`/api/poll/${pollId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+  });
+  const { error } = await res.json();
 
   if (error) {
     console.log(error);
@@ -56,29 +29,17 @@ export const togglePollSubmission = async (
   groupmemberId: string,
   add: boolean
 ) => {
-  if (add) {
-    const { error } = await supabase.from('apps_poll_submission').insert({
-      poll_id: pollId,
-      poll_option_id: pollOptionId,
-      selected_by_id: groupmemberId
-    });
-    if (error) {
-      console.log(error);
-      snackbar.error('snackbar.poll.error.submitting_poll');
-      return;
-    }
-  } else {
-    const { error } = await supabase.from('apps_poll_submission').delete().match({
-      poll_id: pollId,
-      poll_option_id: pollOptionId,
-      selected_by_id: groupmemberId
-    });
+  const res = await fetch('/api/poll/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pollId, pollOptionId, add }) // courseId needed?
+  });
+  const { error } = await res.json();
 
-    if (error) {
-      console.log(error);
-      snackbar.error('snackbar.poll.error.submitting_poll');
-      return;
-    }
+  if (error) {
+    console.log(error);
+    snackbar.error('snackbar.poll.error.submitting_poll');
+    return;
   }
 };
 

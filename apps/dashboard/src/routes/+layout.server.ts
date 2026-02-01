@@ -1,17 +1,11 @@
-import { getSupabase, supabase } from '$lib/utils/functions/supabase';
-
 import type { CurrentOrg } from '$lib/utils/types/org';
 import type { MetaTagsProps } from 'svelte-meta-tags';
 import { PUBLIC_IS_SELFHOSTED } from '$env/static/public';
 import { blockedSubdomain } from '$lib/utils/constants/app';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import { getCurrentOrg } from '$lib/utils/services/org';
+import { getCurrentOrgServer } from '$lib/utils/services/org/server';
 import { redirect } from '@sveltejs/kit';
-
-if (!supabase) {
-  getSupabase();
-}
 
 export const ssr = PUBLIC_IS_SELFHOSTED === 'true' ? false : true;
 
@@ -45,7 +39,7 @@ export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
 
     // Student dashboard
     if (subdomain) {
-      const org = (await getCurrentOrg(subdomain, true)) || null;
+      const org = (await getCurrentOrgServer(subdomain)) || null;
 
       // Organization by subdomain not found
       if (!org) {
@@ -82,7 +76,7 @@ export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
 
   if (isURLCustomDomain(url)) {
     // Custom domain
-    response.org = (await getCurrentOrg(url.host, true, true)) || null;
+    response.org = (await getCurrentOrgServer(url.host, true)) || null;
 
     console.log('custom domain response.org', response.org);
 
@@ -104,7 +98,7 @@ export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
 
     response.isOrgSite = debugMode || !!subdomain;
     response.orgSiteName = debugMode ? _orgSiteName : subdomain;
-    response.org = (await getCurrentOrg(response.orgSiteName, true)) || null;
+    response.org = (await getCurrentOrgServer(response.orgSiteName)) || null;
 
     if (!response.org && !isDev) {
       throw redirect(307, 'https://app.classroomio.com/404?type=org');
