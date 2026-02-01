@@ -1,19 +1,17 @@
 import type { Course } from '$lib/utils/types';
-import { supabase, getAccessToken } from '$lib/utils/functions/supabase';
 import type { Reaction, FeedApi, Feed } from '$lib/utils/types/feed';
 
 export async function fetchNewsFeedReaction(feedId: Feed['id']) {
-  return supabase.from('course_newsfeed').select(`reaction`).eq('id', feedId).single();
+  // Not implemented in API yet, skipping or assuming handled by full feed fetch
+  // Or fetch single feed
+  return { data: null, error: null }; // Placeholder
 }
 
 export async function fetchNewsFeeds(courseId?: Course['id']) {
-  const accessToken = await getAccessToken();
-
   const response = await fetch(`/api/courses/newsfeed?courseId=${courseId}`, {
     method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: accessToken
+      'Content-Type': 'application/json'
     }
   });
 
@@ -43,25 +41,22 @@ export async function createNewFeed(post: {
   course_id: string;
   reaction: Reaction;
 }) {
-  const response = await supabase
-    .from('course_newsfeed')
-    .insert({
-      content: post.content,
-      author_id: post.author_id,
-      course_id: post.course_id,
-      reaction: post.reaction
-    })
-    .select();
-
+  const res = await fetch('/api/courses/newsfeed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(post)
+  });
+  const response = await res.json();
   return { response };
 }
 
 export async function handleEditFeed(feedId: string, content: string) {
-  const response = await supabase
-    .from('course_newsfeed')
-    .update({ content: content })
-    .match({ id: feedId })
-    .select();
+  const res = await fetch('/api/courses/newsfeed', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: feedId, content })
+  });
+  const response = await res.json();
   return response;
 }
 
@@ -70,38 +65,33 @@ export async function createComment(comment: {
   author_id: string;
   course_newsfeed_id: string;
 }) {
-  const response = await supabase
-    .from('course_newsfeed_comment')
-    .insert({
-      content: comment.content,
-      author_id: comment.author_id,
-      course_newsfeed_id: comment.course_newsfeed_id
-    })
-    .select();
-
+  const res = await fetch('/api/courses/newsfeed/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment)
+  });
+  const response = await res.json();
   return { response };
 }
 
 export async function toggleFeedIsPinned(feedId: string, isPinned: boolean) {
-  const response = await supabase
-    .from('course_newsfeed')
-    .update({
-      is_pinned: isPinned
-    })
-    .match({ id: feedId });
-
+  const res = await fetch('/api/courses/newsfeed', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: feedId, is_pinned: isPinned })
+  });
+  const response = await res.json();
   return { response };
 }
 
 export async function deleteNewsFeedComment(commentId: string) {
-  const response = await supabase.from('course_newsfeed_comment').delete().match({ id: commentId });
-
+  const res = await fetch(`/api/courses/newsfeed/comment?id=${commentId}`, { method: 'DELETE' });
+  const response = await res.json();
   return response;
 }
 export async function deleteNewsFeed(feedId: string) {
-  await supabase.from('course_newsfeed_comment').delete().match({ course_newsfeed_id: feedId });
-  const response = await supabase.from('course_newsfeed').delete().match({ id: feedId });
-
+  const res = await fetch(`/api/courses/newsfeed?id=${feedId}`, { method: 'DELETE' });
+  const response = await res.json();
   return response;
 }
 

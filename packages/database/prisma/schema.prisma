@@ -225,6 +225,8 @@ model GroupMember {
   pollSubmissions    AppsPollSubmission[]
   pollsAuthored      AppsPoll[]
   attendanceRecords  GroupAttendance[]
+  newsfeedPosts      CourseNewsfeed[]
+  newsfeedComments   CourseNewsfeedComment[]
 
   @@unique([group_id, profile_id, email])
   @@unique([group_id, email])
@@ -259,6 +261,7 @@ model Course {
   attendance      GroupAttendance[]
   polls           AppsPoll[]
   lesson_sections LessonSection[]
+  newsfeed        CourseNewsfeed[]
 
   @@map("course")
 }
@@ -635,4 +638,35 @@ model Currency {
   created_at DateTime @default(now())
 
   @@map("currency")
+}
+
+model CourseNewsfeed {
+  id         String   @id @default(uuid())
+  content    String?
+  author_id  String?
+  course_id  String?
+  reaction   Json?    @default("{\"like\": []}")
+  is_pinned  Boolean? @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  course   Course?       @relation(fields: [course_id], references: [id])
+  author   GroupMember?  @relation(fields: [author_id], references: [id])
+  comments CourseNewsfeedComment[]
+
+  @@map("course_newsfeed")
+}
+
+model CourseNewsfeedComment {
+  id                 String   @id @default(uuid())
+  content            String?
+  author_id          String?
+  course_newsfeed_id String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @default(now()) @updatedAt
+
+  newsfeed CourseNewsfeed? @relation(fields: [course_newsfeed_id], references: [id])
+  author   GroupMember?    @relation(fields: [author_id], references: [id])
+
+  @@map("course_newsfeed_comment")
 }
