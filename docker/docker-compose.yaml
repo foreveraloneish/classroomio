@@ -13,9 +13,6 @@ services:
       - "3081:3081"
     environment:
       - NODE_ENV=production
-      # Supabase - Database
-      - PUBLIC_SUPABASE_ANON_KEY=${PUBLIC_SUPABASE_ANON_KEY}
-      - PUBLIC_SUPABASE_URL=${PUBLIC_SUPABASE_URL}
       # Cloudflare - Video upload
       - CLOUDFLARE_BUCKET_DOMAIN=${CLOUDFLARE_BUCKET_DOMAIN}
       - CLOUDFLARE_ACCESS_KEY=${CLOUDFLARE_ACCESS_KEY}
@@ -29,6 +26,28 @@ services:
       - SMTP_SENDER=${SMTP_SENDER}
       # Redis
       - REDIS_URL=${REDIS_URL}
+      # MinIO - Object Storage
+      - MINIO_URL=${MINIO_URL}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET}
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: minio server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
 
   dashboard:
     image: classroomio/dashboard:latest
@@ -36,10 +55,7 @@ services:
       - "3082:3082"
     environment:
       - PUBLIC_IS_SELFHOSTED=true
-      # Supabase - Database
-      - PUBLIC_SUPABASE_URL=${PUBLIC_SUPABASE_URL}
-      - PUBLIC_SUPABASE_ANON_KEY=${PUBLIC_SUPABASE_ANON_KEY}
-      - PRIVATE_SUPABASE_SERVICE_ROLE=${PRIVATE_SUPABASE_SERVICE_ROLE}
+      - VITE_MINIO_URL=${MINIO_URL}
       - PRIVATE_APP_HOST=${PRIVATE_APP_HOST} # yourdomain.com
       - PRIVATE_APP_SUBDOMAINS=${PRIVATE_APP_SUBDOMAINS} # app (if you are using app.yourdomain.com for the dashboard)
       - UNSPLASH_API_KEY=${UNSPLASH_API_KEY}
@@ -48,3 +64,7 @@ services:
       - PUBLIC_IP_REGISTRY_KEY=${PUBLIC_IP_REGISTRY_KEY}
     depends_on:
       - api
+      - minio
+
+volumes:
+  minio_data:

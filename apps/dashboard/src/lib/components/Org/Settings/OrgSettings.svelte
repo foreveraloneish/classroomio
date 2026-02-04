@@ -6,7 +6,7 @@
   import ColorPicker from 'svelte-awesome-color-picker';
 
   import { snackbar } from '$lib/components/Snackbar/store';
-  import { supabase } from '$lib/utils/functions/supabase';
+  import { uploadToStorage, getPublicUrl } from '$lib/utils/storage';
   import { injectCustomTheme, setCustomTheme, setTheme } from '$lib/utils/functions/theme';
   import { t } from '$lib/utils/functions/translations';
   import { updateOrgNameValidation } from '$lib/utils/functions/validator';
@@ -99,16 +99,18 @@
       if (avatar) {
         const filename = `user/${$currentOrg.name + Date.now()}.webp`;
 
-        const { data } = await supabase.storage.from('avatars').upload(filename, avatar, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-        if (data) {
-          const { data: response } = supabase.storage.from('avatars').getPublicUrl(filename);
-
-          updates.avatar_url = response.publicUrl;
-          $currentOrg.avatar_url = response.publicUrl;
+        // Convert data URL to Blob
+        const response = await fetch(avatar);
+        const blob = await response.blob();
+        
+        const { data, error: uploadError } = await uploadToStorage('avatars', filename, blob);
+        
+        if (uploadError || !data) {
+          snackbar.error('Failed to upload avatar');
+        } else {
+          const { data: urlData } = getPublicUrl('avatars', data.path);
+          updates.avatar_url = urlData.publicUrl;
+          $currentOrg.avatar_url = urlData.publicUrl;
         }
         avatar = undefined;
       }
