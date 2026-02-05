@@ -36,48 +36,36 @@
     const courseIds = allCourses.map((course) => course.id);
     const courseIdsFilter = `(${courseIds.join(',')})`;
 
-    const { data, error } = await supabase
-      .from('community_question')
-      .select(
-        `
-        organization_id,
-        course_id,
-        title,
-        votes,
-        created_at,
-        slug,
-        comments:community_answer(count),
-        author:profile(
-          fullname
-        ),
-        course!inner (
-          title
-        )
-      `
-      )
-      .filter('course_id', 'in', courseIdsFilter)
-      .order('created_at', { ascending: false });
-    console.log('data', data);
-    console.log('error', error);
+    try {
+      const res = await fetch('/api/community/questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseIds })
+      });
 
-    isLoading = false;
+      const result = await res.json();
+      isLoading = false;
 
-    if (error) {
-      console.error('Error loading community', error);
-      return goto(isLMS ? '/lms' : $currentOrgPath);
-    }
+      if (!res.ok || !result.success) {
+        console.error('Error loading community', result);
+        return goto(isLMS ? '/lms' : $currentOrgPath);
+      }
 
-    discussions =
-      data?.map((discussion) => ({
+      discussions = (result.data || []).map((discussion) => ({
         title: discussion.title,
         courseId: discussion.course_id,
         courseTitle: discussion.course?.title,
         slug: discussion.slug,
         author: discussion?.author?.fullname,
-        comments: discussion.comments?.[0]?.count || 0,
+        comments: discussion.comments || 0,
         votes: discussion.votes,
         createdAt: calDateDiff(discussion.created_at)
-      })) || [];
+      }));
+    } catch (err) {
+      isLoading = false;
+      console.error('Error loading community', err);
+      return goto(isLMS ? '/lms' : $currentOrgPath);
+    }
   }
 
   $: fetchCommunityQuestions($currentOrg.id, $profile.id);

@@ -347,14 +347,35 @@ export async function fetchLesson(lessonId: Lesson['id']) {
   return { data, error };
 }
 
-export function fetchLesssonLanguageHistory(lessonId: string, locale: string, endRange: number) {
-  return supabase
-    .from('lesson_versions')
-    .select('*')
-    .range(0, endRange)
-    .eq('lesson_id', lessonId)
-    .eq('locale', locale)
-    .order('timestamp', { ascending: false });
+export async function fetchLesssonLanguageHistory(lessonId: string, locale: string, endRange: number) {
+  try {
+    const res = await fetch(`/api/courses/lesson/language?lessonId=${lessonId}&locale=${locale}&endRange=${endRange}`);
+    const json = await res.json();
+    if (!json.success) return { data: null, error: json.message };
+    return { data: json.data, error: null };
+  } catch (err) {
+    console.error(err);
+    return { data: null, error: err };
+  }
+}
+
+export async function upsertLessonLanguage(lesson_id: string, locale: string, content: string) {
+  try {
+    const accessToken = await getAccessToken();
+    const res = await fetch('/api/courses/lesson/language', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: accessToken
+      },
+      body: JSON.stringify({ lesson_id, locale, content })
+    });
+
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false, message: err };
+  }
 }
 
 export function createLesson(lesson: any) {

@@ -54,16 +54,23 @@
     if (!email || !validateEmail(email) || !org) return;
     isAdding = true;
 
-    const { error } = await supabase.from('organization_emaillist').insert({
-      email,
-      organization_id: org.id
-    });
+    try {
+      const res = await fetch('/api/org/email-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, organization_id: org.id })
+      });
 
-    if (error) {
-      console.error('Error', error);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('Error saving email list', result);
+      }
+
+      success = true;
+    } catch (err) {
+      console.error('Error', err);
     }
-
-    success = true;
     setTimeout(() => {
       isAdding = false;
       success = false;
@@ -79,28 +86,33 @@
       return;
     }
 
-    // Save to db
-    const { error } = await supabase.from('organization_contacts').insert({
-      name: contact.name,
-      email: contact.email,
-      phone: contact.phone,
-      message: contact.message,
-      organization_id: org?.id
-    });
+    // Save to db via API
+    try {
+      const res = await fetch('/api/org/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...contact, organization_id: org?.id })
+      });
 
-    if (error) {
-      console.error('Something went wrong', error, '\n\nContact', contact);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('Something went wrong', result, '\n\nContact', contact);
+        isContactSubmiting = false;
+      } else {
+        isContactSubmiting = false;
+        successContactSaved = true;
+        contact = {
+          name: '',
+          email: '',
+          phone: '',
+          message: ''
+        };
+      }
+    } catch (err) {
+      console.error('Something went wrong', err, '\n\nContact', contact);
       isContactSubmiting = false;
     }
-
-    isContactSubmiting = false;
-    successContactSaved = true;
-    contact = {
-      name: '',
-      email: '',
-      phone: '',
-      message: ''
-    };
   }
   function isYouTubeLink(link: string) {
     const youtubeRegex =

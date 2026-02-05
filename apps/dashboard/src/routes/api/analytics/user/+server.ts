@@ -7,10 +7,8 @@ import type {
 import { fetchCourses, fetchProfileCourseProgress } from '$lib/utils/services/courses';
 
 import { calcPercentageWithRounding } from '$lib/utils/functions/number';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
+import { prisma } from '@cio/database';
 import { json } from '@sveltejs/kit';
-
-const supabase = getServerSupabase();
 
 const CACHE_DURATION = 60 * 5; // 5 minutes
 
@@ -45,15 +43,16 @@ function sumArrObject<T>(arr: T[], key: keyof T) {
 
 async function getLastLogin(userId: string): Promise<string | undefined> {
   try {
-    const { data, error } = await supabase
-      .from('analytics_login_events')
-      .select('logged_in_at')
-      .eq('user_id', userId)
-      .single();
+    // Fallback for last-seen: use latest session expiresAt or user's updatedAt
+    const lastSession = await prisma.session.findFirst({
+      where: { userId },
+      orderBy: { expiresAt: 'desc' }
+    });
 
-    if (error) throw error;
+    if (lastSession?.expiresAt) return lastSession.expiresAt.toISOString();
 
-    return data?.logged_in_at;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { updatedAt: true } });
+    return user?.updatedAt?.toISOString();
   } catch (error) {
     console.error(error);
   }
@@ -73,20 +72,22 @@ async function getAudienceData(userId: string, orgId: string): Promise<UserAnaly
     overallAverageGrade: 0
   };
 
-  const userResult = await supabase
-    .from('profile')
-    .select('fullname, email, avatar_url')
-    .eq('id', userId)
-    .single();
+  const userResult = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fullname: true, email: true, avatar_url: true, updatedAt: true }
+  });
 
-  if (userResult.error) throw new Error('Failed to fetch user profile');
+  if (!userResult) throw new Error('Failed to fetch user profile');
 
-  audienceAnalytics.user.fullName = userResult.data.fullname;
-  audienceAnalytics.user.email = userResult.data.email;
-  audienceAnalytics.user.avatarUrl = userResult.data.avatar_url || '';
+  audienceAnalytics.user.fullName = userResult.fullname || '';
+  audienceAnalytics.user.email = userResult.email || '';
+  audienceAnalytics.user.avatarUrl = userResult.avatar_url || '';
   audienceAnalytics.user.lastSeen = await getLastLogin(userId);
 
-  const { allCourses = [] } = (await fetchCourses(userId, orgId)) || {};
+  // Fetch courses for org
+  const allCourses = await prisma.course.findMany({
+    where: { group: { organization_id: orgId }, status: 'ACTIVE' }
+  });
 
   for (const course of allCourses) {
     const [userExercisesStats, userCourseProgress] = await Promise.all([
@@ -154,27 +155,35 @@ async function getStudentAnalyticsData(
   };
 
   // fetch user details
-  const { data: userResult, error: userError } = await supabase
-    .from('profile')
-    .select('fullname, email, avatar_url')
-    .eq('id', userId)
-    .single();
+  const userResult = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fullname: true, email: true, avatar_url: true }
+  });
 
-  if (userError) throw new Error('Failed to fetch user profile' + userError.message);
+  if (!userResult) throw new Error('Failed to fetch user profile');
 
-  userCourseAnalytics.user.fullName = userResult.fullname;
-  userCourseAnalytics.user.email = userResult.email;
+  userCourseAnalytics.user.fullName = userResult.fullname || '';
+  userCourseAnalytics.user.email = userResult.email || '';
   userCourseAnalytics.user.avatarUrl = userResult.avatar_url || '';
   userCourseAnalytics.user.lastSeen = await getLastLogin(userId);
 
-  // fetch marks, lessons, and exercise progress
-  const [userExercisesStats, lessons, exerciseResponse] = await Promise.all([
+  // fetch marks, lessons, and exercise progress (Prisma)
+  const [userExercisesStats, lessons, profileCourseProgress] = await Promise.all([
     fetchUserExercisesStats(courseId, userId),
     fetchLessonsWithCompletion(courseId, userId),
-    fetchProfileCourseProgress(courseId, userId)
+    // get exercises_count/completed from submissions/lesson_completions
+    prisma.$queryRawUnsafe(`
+      SELECT
+        (SELECT COUNT(*) FROM exercise WHERE lesson.course_id = $1) AS exercises_count,
+        (SELECT COUNT(*) FROM exercise e
+           JOIN submission s ON e.id = s.exercise_id
+           JOIN groupmember gm ON s.submitted_by = gm.id
+         WHERE e.course_id = $1 AND gm.profile_id = $2
+        ) AS exercises_completed
+      `, courseId, userId)
   ]);
 
-  if (!userExercisesStats || !lessons || !exerciseResponse.data) {
+  if (!userExercisesStats || !lessons || !profileCourseProgress) {
     throw new Error('Failed to fetch course analytics data');
   }
 
@@ -186,8 +195,12 @@ async function getStudentAnalyticsData(
 
   const completedLessons = lessons.filter((lesson) => lesson.completed);
 
-  userCourseAnalytics.totalExercises = exerciseResponse.data[0].exercises_count;
-  userCourseAnalytics.completedExercises = exerciseResponse.data[0].exercises_completed;
+  // profileCourseProgress comes from raw query; structure may be engine dependent
+  const exercisesCount = (profileCourseProgress && profileCourseProgress[0] && profileCourseProgress[0].exercises_count) || 0;
+  const exercisesCompleted = (profileCourseProgress && profileCourseProgress[0] && profileCourseProgress[0].exercises_completed) || 0;
+
+  userCourseAnalytics.totalExercises = Number(exercisesCount);
+  userCourseAnalytics.completedExercises = Number(exercisesCompleted);
 
   console.log('completedLessons.length', completedLessons.length);
   console.log('lessons.length', lessons.length);
@@ -204,42 +217,40 @@ async function fetchUserExercisesStats(
   userId: string
 ): Promise<UserExercisesStats[] | undefined> {
   try {
-    const { data: courseData, error: queryError } = await supabase
-      .from('course')
-      .select(
-        `
-        lesson!inner (
-          title,exercise!left (
-            id,title,lesson_id,created_at,question (points),
-            submission!left (
-              id,total,status_id,submitted_by,groupmember!inner (id,profile_id)
-            )
-          )
-        )
-      `
-      )
-      .eq('lesson.exercise.submission.groupmember.profile_id', userId)
-      .eq('id', courseId)
-      .returns<UserExerciseStatsQuery[]>();
+    // Find group member ids for this user
+    const groupMembers = await prisma.groupMember.findMany({ where: { profile_id: userId } });
+    const groupMemberIds = groupMembers.map((g) => g.id);
 
-    if (queryError) {
-      console.error('Error fetching exercise data:', queryError);
-      return;
-    }
+    // Find exercises for the course and include related questions and submissions
+    const lessons = await prisma.lesson.findMany({
+      where: { course_id: courseId },
+      select: {
+        id: true,
+        title: true,
+        exercise: {
+          select: {
+            id: true,
+            title: true,
+            lesson_id: true,
+            questions: { select: { points: true } },
+            submissions: { where: { submitted_by: { in: groupMemberIds } }, take: 1 }
+          }
+        }
+      }
+    });
 
-    const userExercisesStats = courseData[0].lesson.flatMap((lesson) =>
+    const userExercisesStats: UserExercisesStats[] = lessons.flatMap((lesson) =>
       lesson.exercise.map((exercise) => {
-        const totalPoints = exercise.question.reduce((sum, q) => sum + (q.points || 0), 0);
-
-        const userSubmission = exercise.submission[0];
+        const totalPoints = (exercise.questions || []).reduce((sum, q) => sum + (q.points || 0), 0);
+        const userSubmission = (exercise.submissions || [])[0];
 
         return {
           id: exercise.id,
           lessonId: exercise.lesson_id,
           lessonTitle: lesson.title,
           title: exercise.title,
-          status: userSubmission?.status_id,
-          score: userSubmission?.total || 0,
+          status: userSubmission?.status_id as any,
+          score: Number(userSubmission?.total || 0),
           totalPoints,
           isCompleted: !!userSubmission
         };
@@ -254,26 +265,17 @@ async function fetchUserExercisesStats(
 
 async function fetchLessonsWithCompletion(courseId, userId) {
   try {
-    const { data: lessons, error: lessonsError } = await supabase
-      .from('lesson')
-      .select(
-        `
-        id,title,created_at,
-        exercise:exercise(id),
-        lesson_completion!left (lesson_id)
-      `
-      )
-      .eq('course_id', courseId)
-      .eq('lesson_completion.profile_id', userId);
-
-    if (lessonsError) throw lessonsError;
+    const lessons = await prisma.lesson.findMany({
+      where: { course_id: courseId },
+      include: { completions: { where: { profile_id: userId } }, _count: { select: { exercises: true } } }
+    });
 
     return lessons.map((lesson) => ({
       id: lesson.id,
       title: lesson.title,
       created_at: lesson.created_at,
-      completed: lesson.lesson_completion.length > 0,
-      exerciseNo: lesson.exercise.length
+      completed: (lesson.completions || []).length > 0,
+      exerciseNo: lesson._count?.exercises || 0
     }));
   } catch (error) {
     console.error('Error fetching lessons or completions:', error);

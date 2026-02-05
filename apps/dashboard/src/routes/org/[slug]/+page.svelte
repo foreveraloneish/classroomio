@@ -7,7 +7,7 @@
 
   import { snackbar } from '$lib/components/Snackbar/store';
   import { calDateDiff } from '$lib/utils/functions/date';
-  import { getAccessToken } from '$lib/utils/functions/supabase';
+  import { getAccessToken } from '$lib/utils/functions/auth-client';
   import { currentOrg, currentOrgPath } from '$lib/utils/store/org';
   import { profile } from '$lib/utils/store/user';
   import type { OrganisationAnalytics } from '$lib/utils/types/analytics';

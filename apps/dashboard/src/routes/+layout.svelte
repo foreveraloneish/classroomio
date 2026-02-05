@@ -18,7 +18,6 @@
   import { getProfile, setupAnalytics } from '$lib/utils/functions/appSetup';
   import hideNavByRoute from '$lib/utils/functions/routes/hideNavByRoute';
   import showAppsSideBar from '$lib/utils/functions/showAppsSideBar';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { setTheme } from '$lib/utils/functions/theme';
   import { initOrgAnalytics } from '$lib/utils/services/posthog';
   import { globalStore } from '$lib/utils/store/app';

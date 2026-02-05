@@ -10,7 +10,8 @@ import { authClient } from '$lib/auth-client';
 export async function getAccessToken() {
     try {
         const session = await authClient.getSession();
-        return session?.data?.session?.user?.id || null;
+        const token = session?.data?.session?.token;
+        return token ? `Bearer ${token}` : null;
     } catch {
         return null;
     }

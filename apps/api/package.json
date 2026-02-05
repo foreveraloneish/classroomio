@@ -61,7 +61,6 @@
     "zod-openapi": "^5.4.1"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "^2.93.3",
     "@types/katex": "^0.16.7",
     "@types/node": "^20.11.19",
     "@types/nodemailer": "^6.4.17",

@@ -59,20 +59,27 @@
     }
     isLoading = true;
 
-    const { data: org, error } = await supabase
-      .from('organization')
-      .update({ siteName })
-      .match({ id: $currentOrg.id });
+    try {
+      const res = await fetch('/api/org/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: $currentOrg.id, update: { siteName } })
+      });
 
-    console.log('Updating organisation', org);
-    if (error) {
-      console.log('Error: create organisation', error);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.log('Error: update organisation', result);
+        errors.siteName = $t('add_org.sitename');
+      } else {
+        snackbar.success();
+        $currentOrg.siteName = siteName;
+
+        goto(`/org/${$currentOrg.siteName}/settings/domains`);
+      }
+    } catch (err) {
+      console.error('Error updating siteName', err);
       errors.siteName = $t('add_org.sitename');
-    } else {
-      snackbar.success();
-      $currentOrg.siteName = siteName;
-
-      goto(`/org/${$currentOrg.siteName}/settings/domains`);
     }
 
     isLoading = false;
@@ -101,14 +108,24 @@
     }
 
     isCustomDomainLoading = true;
-    const { error } = await supabase
-      .from('organization')
-      .update({ customDomain: sanitizedDomain })
-      .match({ id: $currentOrg.id });
+    try {
+      const res = await fetch('/api/org/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: $currentOrg.id, update: { customDomain: sanitizedDomain } })
+      });
 
-    if (error) {
-      console.log('Error: create organisation', error);
-      errors.customDomain = error.message;
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.log('Error: update organisation', result);
+        errors.customDomain = result.message || 'Error';
+        isCustomDomainLoading = false;
+        return;
+      }
+    } catch (err) {
+      console.log('Error: update organisation', err);
+      errors.customDomain = err?.message || 'Error';
       isCustomDomainLoading = false;
       return;
     }
@@ -133,14 +150,24 @@
     if (!$currentOrg.customDomain) return;
 
     isCustomDomainLoading = true;
-    const { error } = await supabase
-      .from('organization')
-      .update({ customDomain: null, isCustomDomainVerified: false })
-      .match({ id: $currentOrg.id });
+    try {
+      const res = await fetch('/api/org/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: $currentOrg.id, update: { customDomain: null, isCustomDomainVerified: false } })
+      });
 
-    if (error) {
-      console.log('Error: updating organisation', error);
-      snackbar.error(error.message);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.log('Error: updating organisation', result);
+        snackbar.error(result.message || 'Error');
+        isCustomDomainLoading = false;
+        return;
+      }
+    } catch (err) {
+      console.log('Error: updating organisation', err);
+      snackbar.error(err as string);
       isCustomDomainLoading = false;
       return;
     }
@@ -177,10 +204,11 @@
       if (data.verified && !$currentOrg.isCustomDomainVerified) {
         $currentOrg.isCustomDomainVerified = true;
 
-        await supabase
-          .from('organization')
-          .update({ isCustomDomainVerified: true })
-          .match({ id: $currentOrg.id });
+        await fetch('/api/org/update', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: $currentOrg.id, update: { isCustomDomainVerified: true } })
+        });
       }
     } catch (error) {
       console.log('Error: refreshing domain', error);

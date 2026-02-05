@@ -1,4 +1,3 @@
-export * from './config';
 export * from './dashboard';
 
 export enum LOCALE {

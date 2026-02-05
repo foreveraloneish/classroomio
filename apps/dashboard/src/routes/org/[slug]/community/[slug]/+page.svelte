@@ -129,40 +129,21 @@
   async function fetchCommunityQuestion(slug: string) {
     if (!slug) return;
 
-    const { data, error } = await supabase
-      .from('community_question')
-      .select(
-        `
-        id,
-        title,
-        body,
-        votes,
-        created_at,
-        course_id,
-        slug,
-        comments:community_answer(
-          id,
-          body,
-          votes,
-          created_at,
-          author:profile(id, fullname, avatar_url)
-        ),
-        author:profile(id, fullname, avatar_url),
-        course!inner (
-          title
-        )
-      `
-      )
-      .eq('slug', slug)
-      .single();
+    try {
+      const res = await fetch(`/api/community/question?slug=${encodeURIComponent(slug)}`);
+      const result = await res.json();
 
-    if (error) {
-      console.error('[ORG] Error loading community', error);
+      if (!res.ok || !result.success) {
+        console.error('[ORG] Error loading community', result);
+        return goto(`${currentOrgPath}`);
+      }
+
+      question = mapResToQuestion(result.data);
+      question.totalComments = question.comments.length;
+    } catch (err) {
+      console.error('[ORG] Error loading community', err);
       return goto(`${currentOrgPath}`);
     }
-
-    question = mapResToQuestion(data);
-    question.totalComments = question.comments.length;
   }
 
   async function submitComment() {
@@ -173,43 +154,42 @@
       return;
     }
 
-    const { data, error } = await supabase
-      .from('community_answer')
-      .insert({
-        id: undefined,
-        body: comment,
-        question_id: question.id,
-        author_profile_id: $profile.id,
-        votes: 0
-      })
-      .select();
+    try {
+      const res = await fetch('/api/community/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: comment, question_id: question.id, author_profile_id: $profile.id })
+      });
 
-    if (error) {
-      console.error('Error: commenting', error);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('Error: commenting', result);
+        snackbar.error('snackbar.community.error.try_again');
+      } else {
+        const _c = result.data[0];
+        snackbar.success('snackbar.community.success.comment_submitted');
+
+        question.comments = [
+          ...question.comments,
+          {
+            id: _c.id,
+            authorId: $profile.id || '',
+            name: $profile?.fullname || '',
+            avatar: $profile?.avatar_url || '',
+            votes: 0,
+            comment: _c.body,
+            createdAt: calDateDiff(_c.created_at)
+          }
+        ];
+
+        // Reset input
+        comment = '';
+        resetInput = new Date().getTime();
+      }
+    } catch (err) {
+      console.error('Error: commenting', err);
       snackbar.error('snackbar.community.error.try_again');
-    } else {
-      console.log('Success: commenting', data);
-
-      snackbar.success('snackbar.community.success.comment_submitted');
-
-      // Add to comment
-      const _c = data?.[0];
-      question.comments = [
-        ...question.comments,
-        {
-          id: _c.id,
-          authorId: $profile.id || '',
-          name: $profile?.fullname || '',
-          avatar: $profile?.avatar_url || '',
-          votes: 0,
-          comment: _c.body,
-          createdAt: calDateDiff(_c.created_at)
-        }
-      ];
-
-      // Reset input
-      comment = '';
-      resetInput = new Date().getTime();
     }
   }
 
@@ -221,30 +201,40 @@
 
     const table = isQuestion ? 'community_question' : 'community_answer';
     const matchId = isQuestion ? question.id : commentId;
-    let votes = 0;
 
     if (isQuestion) {
       question.votes = question.votes + 1;
-      votes = question.votes;
     } else {
       question.comments = question.comments.map((c) => {
         if (c.id === commentId) {
           c.votes = c.votes + 1;
-          votes = c.votes;
         }
         return c;
       });
     }
-    const { error } = await supabase.from(table).update({ votes }).match({ id: matchId });
-    if (error) {
-      console.error('Error: upvoteQuestion', error);
-      snackbar.error('snackbar.community.error.try_again');
-    } else {
-      if (isQuestion) {
-        voted.question = true;
-      } else if (commentId) {
-        voted.comment[commentId] = true;
+
+    try {
+      const res = await fetch('/api/community/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table, id: matchId })
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('Error: upvoteQuestion', result);
+        snackbar.error('snackbar.community.error.try_again');
+      } else {
+        if (isQuestion) {
+          voted.question = true;
+        } else if (commentId) {
+          voted.comment[commentId] = true;
+        }
       }
+    } catch (err) {
+      console.error('Error: upvoteQuestion', err);
+      snackbar.error('snackbar.community.error.try_again');
     }
   }
 
@@ -268,25 +258,30 @@
       if (Object.keys(errors).length) {
         return;
       }
-      const { error } = await supabase
-        .from('community_question')
-        .update({
-          title: editContent.title,
-          body: editContent.body,
-          course_id: editContent.courseId
-        })
-        .match({ id: question.id });
-      if (error) {
-        console.error('Error: handleQuestionEdit', error);
-        snackbar.error('snackbar.community.error.try_again');
-      } else {
-        question.title = editContent.title;
-        question.body = editContent.body;
-        question.courseId = editContent.courseId;
+      try {
+        const res = await fetch('/api/community/question', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: question.id, title: editContent.title, body: editContent.body, course_id: editContent.courseId })
+        });
 
-        editContent.title = '';
-        editContent.body = '';
-        editContent.courseId = '';
+        const result = await res.json();
+
+        if (!res.ok || !result.success) {
+          console.error('Error: handleQuestionEdit', result);
+          snackbar.error('snackbar.community.error.try_again');
+        } else {
+          question.title = editContent.title;
+          question.body = editContent.body;
+          question.courseId = editContent.courseId;
+
+          editContent.title = '';
+          editContent.body = '';
+          editContent.courseId = '';
+        }
+      } catch (err) {
+        console.error('Error: handleQuestionEdit', err);
+        snackbar.error('snackbar.community.error.try_again');
       }
     } else {
       editContent.title = question.title;
@@ -299,56 +294,70 @@
     if (!isQuestion) {
       deleteComment.isDeleting = true;
 
-      const { error } = await supabase
-        .from('community_answer')
-        .delete()
-        .match({ id: deleteComment.commentId });
+      try {
+        const res = await fetch('/api/community/answer', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: deleteComment.commentId })
+        });
+        const result = await res.json();
+        deleteComment.isDeleting = false;
 
-      deleteComment.isDeleting = false;
+        if (!res.ok || !result.success) {
+          snackbar.error('snackbar.community.error.deleting_comments');
+          console.log('Error deleting comments', result);
+          return;
+        }
 
-      if (error) {
+        snackbar.success('snackbar.community.success.success_delete');
+
+        question.comments = question.comments.filter((c) => c.id !== deleteComment.commentId);
+        deleteComment.shouldDelete = false;
+        deleteComment.commentId = '';
+
+        // Handle only delete comment
+        return;
+      } catch (err) {
+        deleteComment.isDeleting = false;
+        console.log('Error deleting comments', err);
         snackbar.error('snackbar.community.error.deleting_comments');
-        console.log('Error deleting comments', error);
         return;
       }
-      snackbar.success('snackbar.community.success.success_delete');
-
-      question.comments = question.comments.filter((c) => c.id !== deleteComment.commentId);
-      deleteComment.shouldDelete = false;
-      deleteComment.commentId = '';
-
-      // Handle only delete comment
-      return;
     }
     deleteQuestion.isDeleting = true;
 
-    const { error: commentDeleteError } = await supabase
-      .from('community_answer')
-      .delete()
-      .match({ question_id: deleteQuestion.questionId });
+    try {
+      // First delete comments
+      await fetch('/api/community/answer', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: deleteQuestion.questionId })
+      });
 
-    if (commentDeleteError) {
-      snackbar.error('snackbar.community.error.deleting_comments');
-      console.log('Error deleting comments', commentDeleteError);
+      // Then delete question
+      const res = await fetch('/api/community/question', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deleteQuestion.questionId })
+      });
 
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        snackbar.error('snackbar.community.error.deleting_question');
+        console.log('Error deleting question', result);
+        deleteQuestion.isDeleting = false;
+        return;
+      }
+
+      snackbar.success('snackbar.community.success.success_delete');
+      goto(`${$currentOrgPath}/community`);
       deleteQuestion.isDeleting = false;
-      return;
-    }
-
-    const { error: questionDeleteError } = await supabase
-      .from('community_question')
-      .delete()
-      .match({ id: deleteQuestion.questionId });
-
-    if (questionDeleteError) {
+    } catch (err) {
+      console.log('Error deleting question', err);
       snackbar.error('snackbar.community.error.deleting_question');
-      console.log('Error deleting question', questionDeleteError);
-      return;
+      deleteQuestion.isDeleting = false;
     }
-
-    snackbar.success('snackbar.community.success.success_delete');
-    goto(`${$currentOrgPath}/community`);
-    deleteQuestion.isDeleting = false;
   }
 
   $: browser && fetchCommunityQuestion(slug);

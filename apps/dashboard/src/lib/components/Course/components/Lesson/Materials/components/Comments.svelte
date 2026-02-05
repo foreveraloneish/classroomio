@@ -1,9 +1,6 @@
 <script lang="ts">
   import Avatar from '$lib/components/Avatar/index.svelte';
-  import {
-    lesson,
-    lessonCommentsChannel
-  } from '$lib/components/Course/components/Lesson/store/lessons';
+  import { lesson } from '$lib/components/Course/components/Lesson/store/lessons';
   import { group } from '$lib/components/Course/store';
   import TextArea from '$lib/components/Form/TextArea.svelte';
   import DeleteModal from '$lib/components/Modal/DeleteModal.svelte';
@@ -11,19 +8,12 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { snackbar } from '$lib/components/Snackbar/store';
   import { calDateDiff } from '$lib/utils/functions/date';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { t } from '$lib/utils/functions/translations';
   import { profile } from '$lib/utils/store/user';
-  import type { GroupPerson, LessonComment, LessonCommentInsertPayload } from '$lib/utils/types';
-  import type {
-    PostgrestSingleResponse,
-    RealtimeChannel,
-    RealtimePostgresChangesPayload
-  } from '@supabase/supabase-js';
+  import type { GroupPerson, LessonComment } from '$lib/utils/types';
   import { OverflowMenu, OverflowMenuItem } from 'carbon-components-svelte';
-  import { onDestroy, onMount } from 'svelte';
+  import { onMount } from 'svelte';
 
-  const supabase = getSupabase();
   const PAGE_SIZE = 20;
 
   export let lessonId = '';
@@ -70,29 +60,30 @@
     ];
     pagination.count = comments.length;
 
-    supabase
-      .from('lesson_comment')
-      .insert({
-        lesson_id: $lesson.id,
-        groupmember_id: groupmember.id,
-        comment
-      })
-      .select('id')
-      .single()
-      .then(({ data, error }) => {
-        isSaving = false;
-        if (error) {
-          console.error('Error adding comment:', error);
-          snackbar.error($t('course.navItem.lessons.comments.comment_error'));
-          return;
-        }
-
-        comments = comments.map((comment) =>
-          comment.id === 0 ? { ...comment, id: data.id } : comment
-        );
-        isSaving = false;
-        comment = '';
+    try {
+      const res = await fetch('/api/courses/lesson/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lesson_id: $lesson.id, groupmember_id: groupmember.id, comment })
       });
+
+      const result = await res.json();
+      isSaving = false;
+
+      if (!res.ok || !result.success) {
+        console.error('Error adding comment:', result);
+        snackbar.error($t('course.navItem.lessons.comments.comment_error'));
+        return;
+      }
+
+      // Refresh the first page of comments to get normalized data
+      await fetchComments([{ id: groupmember.id, profile_id: $profile.id }]);
+      comment = '';
+    } catch (err) {
+      isSaving = false;
+      console.error('Error adding comment:', err);
+      snackbar.error($t('course.navItem.lessons.comments.comment_error'));
+    }
   }
 
   async function handleUpdate(commentItem: LessonComment) {
@@ -100,16 +91,24 @@
       return;
     }
 
-    const { error } = await supabase
-      .from('lesson_comment')
-      .update({ comment: commentItem.comment })
-      .eq('id', editCommentId);
+    try {
+      const res = await fetch('/api/courses/lesson/comments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editCommentId, comment: commentItem.comment })
+      });
 
-    if (error) {
-      console.error('handleUpdate', error);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('handleUpdate', result);
+        snackbar.error($t('snackbar.something'));
+      } else {
+        snackbar.success($t('snackbar.success_update'));
+      }
+    } catch (err) {
+      console.error('handleUpdate', err);
       snackbar.error($t('snackbar.something'));
-    } else {
-      snackbar.success($t('snackbar.success_update'));
     }
 
     editCommentId = null;
@@ -121,61 +120,28 @@
       return;
     }
 
-    const { error } = await supabase.from('lesson_comment').delete().eq('id', deleteCommentId);
+    try {
+      const res = await fetch(`/api/courses/lesson/comments?id=${deleteCommentId}`, { method: 'DELETE' });
+      const result = await res.json();
 
-    if (error) {
-      console.error('error', error);
+      if (!res.ok || !result.success) {
+        console.error('error', result);
+        snackbar.error($t('snackbar.something'));
+      } else {
+        snackbar.success($t('snackbar.success_delete'));
+      }
+
+      comments = comments.filter((comment) => comment.id !== deleteCommentId);
+      pagination.count = comments.length;
+
+      deleteCommentId = null;
+    } catch (err) {
+      console.error('error', err);
       snackbar.error($t('snackbar.something'));
-    } else {
-      snackbar.success($t('snackbar.success_delete'));
     }
-
-    comments = comments.filter((comment) => comment.id !== deleteCommentId);
-    pagination.count = comments.length;
-
-    deleteCommentId = null;
   }
 
-  async function handleInsert(payload: RealtimePostgresChangesPayload<LessonCommentInsertPayload>) {
-    const insertedComment = payload.new as LessonCommentInsertPayload;
 
-    if (groupmember && groupmember.id === insertedComment.groupmember_id) {
-      return;
-    }
-
-    const {
-      data,
-      error
-    }: PostgrestSingleResponse<{
-      id: string;
-      profile: {
-        fullname: string;
-        avatar_url: string;
-      };
-    }> = await supabase
-      .from('groupmember')
-      .select('id, profile:profile_id(fullname, avatar_url)')
-      .eq('id', insertedComment.groupmember_id)
-      .single();
-
-    if (error || !data) {
-      console.error('handleInsert', error);
-      return;
-    }
-
-    comments = [
-      {
-        id: insertedComment.id,
-        comment: insertedComment.comment,
-        name: data.profile.fullname,
-        avatar: data.profile.avatar_url,
-        commentAt: insertedComment.created_at,
-        groupmember_id: insertedComment.groupmember_id
-      },
-      ...comments
-    ];
-    pagination.count = comments.length;
-  }
 
   let pagination = {
     hasMore: true,
@@ -192,52 +158,45 @@
 
     isFetching = true;
 
-    const from = pagination.page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const page = pagination.page || 0;
+    const pageSize = PAGE_SIZE;
 
-    const { data, error, count } = await supabase
-      .from('lesson_comment')
-      .select(
-        `
-        groupmember_id,
-        created_at,
-        id,
-        comment,
-        groupmember:groupmember_id(
-            id,profile:profile_id(fullname, avatar_url)
-        )
-        `,
-        { count: 'exact' }
-      )
-      .match({
-        lesson_id: lessonId
-      })
-      .order('created_at', { ascending: false })
-      .range(from, to)
-      .returns<FetchComments[]>();
+    try {
+      const res = await fetch(`/api/courses/lesson/comments?lessonId=${lessonId}&page=${page}&pageSize=${pageSize}`);
+      const result = await res.json();
 
-    if (error || !data) {
-      console.error('error');
-      return;
+      if (!res.ok || !result.success) {
+        console.error('Error fetching comments', result);
+        isFetching = false;
+        return;
+      }
+
+      const data = result.data || [];
+      const count = result.count || 0;
+
+      const newComments = data.map((lessonComment) => {
+        return {
+          id: lessonComment.id,
+          comment: lessonComment.comment,
+          avatar: lessonComment.groupmember.profile.avatar_url,
+          commentAt: lessonComment.created_at,
+          groupmember_id: lessonComment.groupmember.id,
+          name:
+            lessonComment.groupmember.id === groupmember?.id
+              ? $t('course.navItem.lessons.comments.you')
+              : lessonComment.groupmember.profile.fullname
+        };
+      });
+
+      comments = page === 0 ? newComments : [...comments, ...newComments];
+      pagination.hasMore = page * pageSize + (data?.length || 0) < count;
+      pagination.count = count ?? 0;
+      isFetching = false;
+    } catch (err) {
+      console.error('error', err);
+      isFetching = false;
     }
-
-    const newComments = data.map((lessonComment) => {
-      return {
-        id: lessonComment.id,
-        comment: lessonComment.comment,
-        avatar: lessonComment.groupmember.profile.avatar_url,
-        commentAt: lessonComment.created_at,
-        groupmember_id: lessonComment.groupmember.id,
-        name:
-          lessonComment.groupmember.id === groupmember?.id
-            ? $t('course.navItem.lessons.comments.you')
-            : lessonComment.groupmember.profile.fullname
-      };
-    });
-
-    comments = pagination.page === 0 ? newComments : [...comments, ...newComments];
-    pagination.hasMore = count ? from + data.length < count : false;
-    pagination.count = count ?? 0;
+  }
     pagination.page++;
 
     isFetching = false;
@@ -245,23 +204,6 @@
 
   onMount(async () => {
     fetchComments($group.people);
-
-    if (!$lessonCommentsChannel) {
-      lessonCommentsChannel.set(
-        supabase
-          .channel('any')
-          .on(
-            'postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'lesson_comment' },
-            handleInsert
-          )
-          .subscribe()
-      );
-    }
-  });
-
-  onDestroy(() => {
-    supabase.removeChannel($lessonCommentsChannel);
   });
 </script>
 

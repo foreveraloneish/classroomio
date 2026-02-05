@@ -1,5 +1,4 @@
 import { env } from '$env/dynamic/private';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
 import { cancelOrgPlan, createOrgPlan, updateOrgPlan } from '$lib/utils/services/org';
 import type { PolarWebhookPayload } from '$lib/utils/types/polar';
 import { Webhooks } from '@polar-sh/sveltekit';
@@ -11,8 +10,6 @@ export const POST = Webhooks({
 });
 
 async function onPayload(payload: PolarWebhookPayload) {
-  const supabase = getServerSupabase();
-
   const metadata = payload.data.metadata;
   const orgId = metadata.orgId;
   const triggeredBy = metadata.triggeredBy;
@@ -39,9 +36,8 @@ async function onPayload(payload: PolarWebhookPayload) {
     case 'subscription.created':
       if (isSubscriptionActive) {
         const { data, error } = await createOrgPlan({
-          supabase,
-          subscriptionId,
           orgId,
+          subscriptionId,
           triggeredBy: parseInt(triggeredBy),
           planName: PLAN.EARLY_ADOPTER,
           data: payload.data
@@ -68,7 +64,6 @@ async function onPayload(payload: PolarWebhookPayload) {
       } else {
         // Handle Update Subscription
         const { data, error } = await updateOrgPlan({
-          supabase,
           subscriptionId,
           data: payload.data
         });

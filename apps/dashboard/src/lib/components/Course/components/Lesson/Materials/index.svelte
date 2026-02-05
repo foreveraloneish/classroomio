@@ -25,7 +25,7 @@
   import TextEditor from '$lib/components/TextEditor/index.svelte';
   import MODES from '$lib/utils/constants/mode';
   import { formatYoutubeVideo } from '$lib/utils/functions/formatYoutubeVideo';
-  import { supabase } from '$lib/utils/functions/supabase';
+  import { upsertLessonLanguage } from '$lib/utils/services/courses';
   import { isHtmlValueEmpty } from '$lib/utils/functions/toHtml';
   import { lessonFallbackNote, t } from '$lib/utils/functions/translations';
   import { currentOrg } from '$lib/utils/store/org';
@@ -83,47 +83,22 @@
 
   async function saveOrUpdateTranslation(locale, lessonId) {
     const content = $lessonByTranslation[lessonId][locale];
-    const lessonLocaleExists = localeExists[lessonId] ?? {};
 
-    if (typeof lessonLocaleExists[locale] === 'undefined') {
-      const { data } = await supabase
-        .from('lesson_language')
-        .select(`id`)
-        .eq('lesson_id', lessonId)
-        .eq('locale', locale)
-        .maybeSingle();
-
-      lessonLocaleExists[locale] = !!(data && data?.id);
-    }
-
-    if (lessonLocaleExists[locale]) {
-      const { error: updateError } = await supabase
-        .from('lesson_language')
-        .update({ content })
-        .eq('lesson_id', lessonId)
-        .eq('locale', locale);
-
-      if (updateError) {
-        console.error('Error updating translation:', updateError.message);
-        snackbar.error('snackbar.materials.update_translations');
-      }
-    } else {
-      const { error: insertError } = await supabase.from('lesson_language').insert({
-        locale,
-        lesson_id: lessonId,
-        content
-      });
-
-      if (insertError) {
-        console.error('Error inserting translation:', insertError.message);
-        snackbar.error('snackbar.materials.creating_new');
+    try {
+      const res = await upsertLessonLanguage(lessonId, locale, content);
+      if (!res.success) {
+        console.error('Error saving translation:', res.message);
+        snackbar.error('snackbar.materials.apology');
         return;
       }
 
+      const lessonLocaleExists = localeExists[lessonId] ?? {};
       lessonLocaleExists[locale] = true;
+      localeExists[lessonId] = lessonLocaleExists;
+    } catch (err) {
+      console.error(err);
+      snackbar.error('snackbar.materials.apology');
     }
-
-    localeExists[lessonId] = lessonLocaleExists;
   }
 
   async function saveLesson(materials?: LessonPage['materials']) {

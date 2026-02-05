@@ -1,4 +1,4 @@
-import { getAccessToken } from '$lib/utils/functions/supabase';
+import { getAccessToken } from '$lib/utils/functions/auth-client';
 
 export async function fetchMarks(courseId: string) {
   try {

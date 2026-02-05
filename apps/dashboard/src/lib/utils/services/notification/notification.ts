@@ -1,4 +1,4 @@
-import { getAccessToken } from '$lib/utils/functions/supabase';
+import { getAccessToken } from '$lib/utils/functions/auth-client';
 
 export const NOTIFICATION_NAME = {
   WELCOME_TO_APP: 'WELCOME TO APP',

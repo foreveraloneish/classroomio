@@ -9,7 +9,7 @@
   import { fetchLesssonLanguageHistory } from '$lib/utils/services/courses';
   import { diffLines } from 'diff';
   import { lesson, lessons } from '$lib/components/Course/components/Lesson/store/lessons';
-  import { supabase } from '$lib/utils/functions/supabase';
+  import { upsertLessonLanguage, fetchLesssonLanguageHistory } from '$lib/utils/services/courses';
   import { sanitizeHtml } from '$lib/utils/functions/sanitize';
   import { t } from '$lib/utils/functions/translations';
 
@@ -141,11 +141,10 @@
   async function restoreSelectedVersion() {
     try {
       contentRestoreLoading = true;
-      await supabase
-        .from('lesson_language')
-        .update({ content: selectedVersion.new_content })
-        .eq('lesson_id', selectedVersion.lesson_id)
-        .eq('locale', selectedVersion.locale);
+      const res = await upsertLessonLanguage(selectedVersion.lesson_id, selectedVersion.locale, selectedVersion.new_content);
+      if (!res.success) {
+        throw new Error(res.message || 'Failed to restore');
+      }
     } catch (error) {
       console.error(error);
       snackbar.error('Failed to restore');

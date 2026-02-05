@@ -27,17 +27,26 @@
   async function handleSave() {
     isSaving = true;
 
-    const { error } = await supabase
-      .from('organization')
-      .update({ customization: $currentOrg.customization })
-      .match({ id: $currentOrg.id });
+    try {
+      const res = await fetch('/api/org/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: $currentOrg.id, update: { customization: $currentOrg.customization } })
+      });
 
-    if (error) {
-      const message = error?.message || 'snackbar.lms.error.try_again';
-      console.error('Error updating customizations', message);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        const message = result.message || 'snackbar.lms.error.try_again';
+        console.error('Error updating customizations', message);
+        snackbar.error('snackbar.lms.error.update');
+      } else {
+        $currentOrg = { ...$currentOrg, customization: result.data.customization };
+        snackbar.success('snackbar.success_update');
+      }
+    } catch (err) {
+      console.error('Error updating customizations', err);
       snackbar.error('snackbar.lms.error.update');
-    } else {
-      snackbar.success('snackbar.success_update');
     }
 
     isSaving = false;

@@ -1,8 +1,12 @@
-import { supabase, getAccessToken } from '$lib/utils/functions/supabase';
+import { getAccessToken } from '$lib/utils/functions/auth-client';
 import type { ExerciseSubmissions } from '$lib/utils/types';
 
-export function fetchSubmissionStatus() {
-  return supabase.from('submissionstatus').select(`*`);
+export async function fetchSubmissionStatus() {
+  const accessToken = await getAccessToken();
+  const res = await fetch('/api/courses/submissionstatus', { headers: { Authorization: accessToken || '' } });
+  if (!res.ok) throw new Error('Failed to fetch submission statuses');
+  const result = await res.json();
+  return result.data;
 }
 
 export async function fetchSubmissions(course_id: string) {
@@ -101,16 +105,31 @@ export async function updateSubmission(
     toUpdate.total = total;
   }
 
-  return supabase.from('submission').update(toUpdate, otherArgs).match({ id });
+  const accessToken = await getAccessToken();
+  const res = await fetch('/api/courses/submission', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: accessToken || '' },
+    body: JSON.stringify({ id, status_id, total, feedback })
+  });
+
+  return await res.json();
 }
 
 export async function deleteSubmission(id: string) {
-  return supabase.from('submission').delete().match({ id });
+  const accessToken = await getAccessToken();
+  const res = await fetch(`/api/courses/submission?id=${id}`, { method: 'DELETE', headers: { Authorization: accessToken || '' } });
+  return await res.json();
 }
 
 export async function updateQuestionAnswer(
   update: Record<string, string>,
   match: Record<string, string>
 ) {
-  return supabase.from('question_answer').update(update).match(match);
+  const accessToken = await getAccessToken();
+  const res = await fetch('/api/courses/question-answer', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: accessToken || '' },
+    body: JSON.stringify({ update, match })
+  });
+  return await res.json();
 }

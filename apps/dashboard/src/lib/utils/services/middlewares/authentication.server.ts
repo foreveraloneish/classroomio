@@ -1,20 +1,11 @@
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
+import { auth } from '$lib/auth';
 
-const supabase = getServerSupabase();
+export const validateUser = async (headers: Headers) => {
+  const session = await auth.api.getSession({ headers });
 
-export const validateUser = async (accessToken: string) => {
-  let user;
-
-  try {
-    const { data } = await supabase.auth.getUser(accessToken);
-    user = data.user;
-  } catch (error) {
-    console.error(error);
-  }
-
-  if (!user) {
+  if (!session?.user) {
     throw new Error('Unauthenticated user');
   }
 
-  return user;
+  return session.user;
 };
