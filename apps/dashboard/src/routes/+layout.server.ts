@@ -24,7 +24,11 @@ interface LoadOutput {
   serverLang: string;
 }
 
-const APP_SUBDOMAINS = env.PRIVATE_APP_SUBDOMAINS?.split(',') || [];
+const APP_SUBDOMAINS = new Set(env.PRIVATE_APP_SUBDOMAINS?.split(',') || []);
+
+const notCustomDomainHosts = [env.PRIVATE_APP_HOST || '', 'classroomio.com', 'vercel.app'].filter(
+  Boolean
+);
 
 export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
   const response: LoadOutput = {
@@ -94,8 +98,8 @@ export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
     response.isOrgSite = true;
     response.orgSiteName = response.org?.siteName || '';
     return response;
-  } else if (!blockedSubdomain.includes(subdomain)) {
-    if (APP_SUBDOMAINS.includes(subdomain)) {
+  } else if (!blockedSubdomain.has(subdomain)) {
+    if (APP_SUBDOMAINS.has(subdomain)) {
       // This is an app domain specified in the .env file
       return response;
     }
@@ -113,7 +117,7 @@ export const load = async ({ url, cookies, request }): Promise<LoadOutput> => {
     }
   } else if (subdomain === 'play' || debugPlay === 'true') {
     response.skipAuth = true;
-  } else if (!APP_SUBDOMAINS.includes(subdomain) && !isDev) {
+  } else if (!APP_SUBDOMAINS.has(subdomain) && !isDev) {
     // This case is for anything in our blockedSubdomains
     throw redirect(307, 'https://app.classroomio.com');
   }
@@ -125,10 +129,6 @@ function isURLCustomDomain(url: URL) {
   if (url.host.includes('localhost')) {
     return false;
   }
-
-  const notCustomDomainHosts = [env.PRIVATE_APP_HOST || '', 'classroomio.com', 'vercel.app'].filter(
-    Boolean
-  );
 
   return !notCustomDomainHosts.some((host) => url.host.endsWith(host));
 }

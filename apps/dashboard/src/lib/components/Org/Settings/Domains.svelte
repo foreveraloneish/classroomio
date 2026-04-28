@@ -53,7 +53,7 @@
       return;
     }
 
-    if (blockedSubdomain.includes(siteName || '')) {
+    if (blockedSubdomain.has(siteName || '')) {
       errors.siteName = 'Sitename already exists.';
       return;
     }

@@ -131,7 +131,7 @@
 
     if (step === 1) {
       // Validate if domain is among our seculeded subdomains
-      if (blockedSubdomain.includes(fields.siteName || '')) {
+      if (blockedSubdomain.has(fields.siteName || '')) {
         errors.siteName = 'Sitename already exists.';
         loading = false;
         return;
