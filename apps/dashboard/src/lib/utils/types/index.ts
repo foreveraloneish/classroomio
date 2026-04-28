@@ -328,7 +328,8 @@ export interface LessonCompletion {
 
 export interface Lesson {
   note?: any; // type unknown;
-  videos?: []; // type unknown;
+  videos?: LessonVideo[];
+  documents?: LessonDocument[];
   slide_url?: any; // type unknown;
   course_id: string /* foreign key to course.id */;
   section_id?: string /* foreign key to course.id */;
