@@ -647,13 +647,13 @@ export async function submitExercise(
 }
 
 export async function deleteExercise(questions: Array<{ id: string }>, exerciseId: Exercise['id']) {
-  for (const question of questions) {
-    const { id } = question;
+  const questionIds = questions.map((q) => q.id);
 
-    await supabase.from('option').delete().match({ question_id: id });
-    await supabase.from('question_answer').delete().match({ question_id: id });
+  if (questionIds.length > 0) {
+    await supabase.from('option').delete().in('question_id', questionIds);
+    await supabase.from('question_answer').delete().in('question_id', questionIds);
 
-    await supabase.from('question').delete().match({ id });
+    await supabase.from('question').delete().in('id', questionIds);
   }
 
   await supabase.from('submission').delete().match({ exercise_id: exerciseId });
