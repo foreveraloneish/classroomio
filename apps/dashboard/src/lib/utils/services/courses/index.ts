@@ -90,7 +90,7 @@ const SLUG_QUERY = `
   certificate_theme,
   lesson_section(id, title, order),
   lessons:lesson(
-    id, title, order, section_id
+    id, title, order, section_id, documents
   )
 `;
 
@@ -117,7 +117,7 @@ const ID_QUERY = `
   lesson_section(id, title, order, created_at),
   lessons:lesson(
     id, title, public, lesson_at, is_unlocked, order, created_at, section_id,
-    note, videos, slide_url, call_url, totalExercises:exercise(count), totalComments:lesson_comment(count),
+    note, videos, documents, slide_url, call_url, totalExercises:exercise(count), totalComments:lesson_comment(count),
     profile:teacher_id(id, avatar_url, fullname),
     lesson_completion(id, profile_id, is_complete)
   ),
@@ -290,7 +290,6 @@ export async function getMarks(courseId) {
 }
 
 export async function fetchLesson(lessonId: Lesson['id']) {
-  // TODO: add documents to the query
   const { data, error } = await supabase
     .from('lesson')
     .select(
@@ -648,14 +647,11 @@ export async function submitExercise(
 }
 
 export async function deleteExercise(questions: Array<{ id: string }>, exerciseId: Exercise['id']) {
-  for (const question of questions) {
-    const { id } = question;
+  const questionIds = questions.map((q) => q.id);
 
-    await supabase.from('option').delete().match({ question_id: id });
-    await supabase.from('question_answer').delete().match({ question_id: id });
-
-    await supabase.from('question').delete().match({ id });
-  }
+  await supabase.from('option').delete().in('question_id', questionIds);
+  await supabase.from('question_answer').delete().in('question_id', questionIds);
+  await supabase.from('question').delete().in('id', questionIds);
 
   await supabase.from('submission').delete().match({ exercise_id: exerciseId });
   await supabase.from('exercise').delete().match({ id: exerciseId });

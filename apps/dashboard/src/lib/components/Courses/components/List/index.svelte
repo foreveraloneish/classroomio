@@ -9,7 +9,7 @@
   import { isMobile } from '$lib/utils/store/useMobile';
   import { goto } from '$app/navigation';
   import { t } from '$lib/utils/functions/translations';
-  import { copyCourseModal, deleteCourseModal } from '../../store';
+  import { copyCourseModal, deleteCourseModal } from '$lib/components/Courses/store';
 
   export let id = '';
   export let title = '';
