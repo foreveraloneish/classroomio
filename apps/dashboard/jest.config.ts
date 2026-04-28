@@ -1,5 +1,6 @@
 import type { Config } from 'jest';
 
+/** @type {import('ts-jest').JestConfigWithTsJest} */
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
@@ -9,7 +10,7 @@ const config: Config = {
     '\\.[jt]sx?$': 'babel-jest'
   },
   moduleNameMapper: {
-    '^\$lib/(.*)$': '<rootDir>/src/lib/$1'
+    '^\\$lib/(.*)$': '<rootDir>/src/lib/$1'
   }
 };
 
