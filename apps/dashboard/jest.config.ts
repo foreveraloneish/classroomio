@@ -5,17 +5,18 @@
 
 import type { Config } from 'jest';
 
-const config: Config = {};
-
-export default config;
-
 /** @type {import('ts-jest').JestConfigWithTsJest} */
-module.exports = {
+const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   transform: {
     '^.+\\.svelte$': 'svelte-jester',
     '^.+\\.ts$': 'ts-jest',
     '\\.[jt]sx?$': 'babel-jest'
+  },
+  moduleNameMapper: {
+    '^\$lib/(.*)$': '<rootDir>/src/lib/$1'
   }
 };
+
+export default config;
