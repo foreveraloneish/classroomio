@@ -26,8 +26,7 @@
 
   function handleShareCourse(e) {
     e.stopPropagation();
-    // TODO: Share course functionality
-    alert('WIP: Share course');
+    goto(`/courses/${id}/settings#share`);
   }
 
   function handleInvite(e) {
