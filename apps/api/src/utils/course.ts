@@ -166,6 +166,5 @@ async function generateSinglePdfFromHtml(
 export async function generateCoursePdf(params: TCourseDownloadContent): Promise<Buffer> {
   const body = getCourseBody(params);
   const html = getHtmlTemplate(body);
-  console.log(html);
   return await generateSinglePdfFromHtml(html, params.courseTitle, params.orgTheme);
 }
