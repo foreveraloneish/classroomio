@@ -48,7 +48,7 @@
       return;
     }
     // Validate if domain is among our seculeded subdomains
-    if (blockedSubdomain.includes(siteName || '')) {
+    if (blockedSubdomain.has(siteName || '')) {
       errors.siteName = 'Sitename already exists.';
       loading = false;
       return;

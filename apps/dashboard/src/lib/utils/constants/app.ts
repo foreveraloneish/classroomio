@@ -1,4 +1,4 @@
-export const blockedSubdomain = [
+export const blockedSubdomain = new Set([
   'academy',
   'app',
   'apps',
@@ -31,4 +31,4 @@ export const blockedSubdomain = [
   'teachers',
   'tech',
   'training'
-];
+]);
