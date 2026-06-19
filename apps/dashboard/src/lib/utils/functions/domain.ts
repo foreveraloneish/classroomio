@@ -1,4 +1,4 @@
-import { supabase } from '$lib/utils/functions/supabase';
+import { authClient } from '$lib/auth-client';
 
 export const sanitizeDomain = (domain: string) => {
   return domain
@@ -9,15 +9,15 @@ export const sanitizeDomain = (domain: string) => {
 };
 
 export async function sendDomainRequest(key: string, domain: string): Promise<Response> {
-  const { data } = await supabase.auth.getSession();
-  const accessToken = data.session?.access_token || '';
+  const session = await authClient.getSession();
+  const accessToken = session?.data?.session?.token || '';
 
   return fetch('/api/domain', {
     method: 'POST',
     body: JSON.stringify({ params: { key, domain } }),
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `${accessToken}`
+      Authorization: accessToken ? `Bearer ${accessToken}` : ''
     }
   });
 }

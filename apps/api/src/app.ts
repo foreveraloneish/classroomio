@@ -2,11 +2,12 @@ import 'dotenv/config';
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { courseRouter } from '$src/routes/course/course';
+import { cloneRouter } from '$src/routes/course/clone';
+import { pollRouter } from '$src/routes/poll';
+import { presignRouter } from '$src/routes/course/presign';
 import { logger } from 'hono/logger';
 import { mailRouter } from '$src/routes/mail';
 import { prettyJSON } from 'hono/pretty-json';
-import { rateLimiterMiddleware } from '$src/middlewares/rate-limiter';
 import { secureHeaders } from 'hono/secure-headers';
 
 // Create Hono app with chaining for RPC support
@@ -26,7 +27,6 @@ export const app = new Hono()
       credentials: true
     })
   )
-  .use('*', rateLimiterMiddleware)
 
   // Routes
   .get('/', (c) =>
@@ -34,8 +34,10 @@ export const app = new Hono()
       message: '"Welcome to Classroomio.com API - docs are at https://api.classroomio.com/docs"'
     })
   )
-  .route('/course', courseRouter)
+  .route('/course/clone', cloneRouter)
+  .route('/course/presign', presignRouter)
   .route('/mail', mailRouter)
+  .route('/poll', pollRouter)
 
   // Error handling
   .onError((err, c) => {

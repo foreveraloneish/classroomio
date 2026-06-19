@@ -128,18 +128,26 @@
     $landingPageSettings.footer.linkedin = checkPrefix($landingPageSettings.footer.linkedin) || '';
     $landingPageSettings.footer.facebook = checkPrefix($landingPageSettings.footer.facebook) || '';
 
-    const { error } = await supabase
-      .from('organization')
-      .update({ landingpage: $landingPageSettings })
-      .match({ id: $currentOrg.id });
+    try {
+      const res = await fetch('/api/org/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: $currentOrg.id, update: { landingpage: $landingPageSettings } })
+      });
 
-    if (error) {
-      const message = error?.message || 'snackbar.lms.error.try_again';
-      snackbar.error(`snackbar.lms.error.update ${message}`);
-    } else {
-      $currentOrg.landingpage = $landingPageSettings as any;
-      snackbar.success('snackbar.success_update');
-      hasUnsavedChanges = false;
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        const message = result.message || 'snackbar.lms.error.try_again';
+        snackbar.error(`snackbar.lms.error.update ${message}`);
+      } else {
+        $currentOrg.landingpage = result.data.landingpage as any;
+        snackbar.success('snackbar.success_update');
+        hasUnsavedChanges = false;
+      }
+    } catch (err) {
+      console.error('Error updating landingpage', err);
+      snackbar.error('snackbar.lms.error.update');
     }
 
     isSaving = false;

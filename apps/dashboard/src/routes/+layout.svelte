@@ -18,7 +18,6 @@
   import { getProfile, setupAnalytics } from '$lib/utils/functions/appSetup';
   import hideNavByRoute from '$lib/utils/functions/routes/hideNavByRoute';
   import showAppsSideBar from '$lib/utils/functions/showAppsSideBar';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { setTheme } from '$lib/utils/functions/theme';
   import { initOrgAnalytics } from '$lib/utils/services/posthog';
   import { globalStore } from '$lib/utils/store/app';
@@ -30,14 +29,13 @@
   import { onMount } from 'svelte';
   import { MetaTags } from 'svelte-meta-tags';
   import isPublicRoute from '$lib/utils/functions/routes/isPublicRoute';
-  import { hasSession } from '$lib/utils/functions/supabase';
   import { goto } from '$app/navigation';
+  import { authClient } from '$lib/auth-client';
 
   import '../app.postcss';
 
   export let data;
 
-  let supabase = getSupabase();
   let path = $page.url?.pathname?.replace('/', '');
   let queryParam = $page.url?.search;
   let carbonTheme: CarbonTheme = 'white';
@@ -76,38 +74,24 @@
     setTheme(data.org?.theme);
   }
 
-  onMount(() => {
+  onMount(async () => {
     pageSetup();
 
-    if (!hasSession() && !isPublicRoute($page.url?.pathname)) {
+    const session = await authClient.getSession();
+    if (!session.data && !isPublicRoute($page.url?.pathname)) {
       console.log('No auth token and is not a public route, redirect to login', path);
       return goto('/login?redirect=/' + path);
     }
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
-      console.log(`event`, event);
-
-      if (path.includes('reset')) {
-        console.log('Dont change auth when on reset page');
-        return;
-      }
-
-      if (data.skipAuth) return;
-
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+    // Auth state handled via session check. If authenticated, getProfile is called below.
+    if (session.data && !data.skipAuth) {
         getProfileDebounced({
           path,
           queryParam,
           isOrgSite: data.isOrgSite,
           orgSiteName: data.orgSiteName
         });
-      }
-    });
-
-    return () => {
-      console.log('unsubscribed');
-      authListener.subscription.unsubscribe();
-    };
+    }
   });
 
   $: path = $page.url?.pathname?.replace('/', '');

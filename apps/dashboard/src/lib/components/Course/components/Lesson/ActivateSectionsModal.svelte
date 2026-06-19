@@ -3,7 +3,7 @@
   import Modal from '$lib/components/Modal/index.svelte';
   import { t } from '$lib/utils/functions/translations';
   import { VARIANTS } from '$lib/components/PrimaryButton/constants';
-  import { supabase } from '$lib/utils/functions/supabase';
+  import { getAccessToken } from '$lib/utils/functions/auth-client';
   import { course } from '../../store';
   import { snackbar } from '$lib/components/Snackbar/store';
 
@@ -13,16 +13,29 @@
 
   const activate = async () => {
     isActivating = true;
-    const { error } = await supabase.rpc('convert_course_to_v2', {
-      course_id_arg: $course.id
-    });
 
-    if (error) {
+    try {
+      const token = await getAccessToken();
+      const res = await fetch('/api/courses/convert-to-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token || '' },
+        body: JSON.stringify({ course_id: $course.id })
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        snackbar.error('snackbar.something');
+        isActivating = false;
+        return;
+      }
+
+      window.location.reload();
+    } catch (err) {
+      console.error('Error converting course', err);
       snackbar.error('snackbar.something');
-      return;
+      isActivating = false;
     }
-
-    window.location.reload();
   };
 
   function handleClose() {

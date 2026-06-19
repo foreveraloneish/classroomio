@@ -15,7 +15,7 @@ import isPublicRoute from '$lib/utils/functions/routes/isPublicRoute';
 import { page } from '$app/stores';
 import { setTheme } from '$lib/utils/functions/theme';
 import shouldRedirectOnAuth from '$lib/utils/functions/routes/shouldRedirectOnAuth';
-import { supabase } from '$lib/utils/functions/supabase';
+import { authClient } from '$lib/auth-client';
 
 export function setupAnalytics() {
   // Set up sentry
@@ -66,10 +66,8 @@ export async function getProfile({
 
   const params = new URLSearchParams(window.location.search);
   // Get user profile
-  const {
-    data: { session }
-  } = await supabase.auth.getSession();
-  const { user: authUser } = session || {};
+  const session = await authClient.getSession();
+  const authUser = session.data?.user;
   console.log('Get user', authUser);
 
   if (!authUser && !isPublicRoute(pageStore.url?.pathname)) {
@@ -88,90 +86,13 @@ export async function getProfile({
     return;
   }
 
-  // Check if user has profile
-  let {
-    data: profileData,
-    error,
-    status
-  } = await supabase.from('profile').select(`*`).eq('id', authUser?.id).single();
+  // Check if user has profile (fetch from API)
+  const res = await fetch('/api/profile');
+  const { data: profileData, error } = await res.json();
   console.log('Get profile', profileData);
 
-  if (error && !profileData && status === 406 && authUser) {
-    // User wasn't found, create profile
-    console.log(`User wasn't found, create profile`);
-
-    const [regexUsernameMatch] = [...(authUser.email?.matchAll(/(.*)@/g) || [])];
-
-    const isGoogleAuth = !!authUser.app_metadata?.providers?.includes('google');
-
-    const { data: newProfileData, error } = await supabase
-      .from('profile')
-      .insert({
-        id: authUser.id,
-        username: regexUsernameMatch[1] + `${new Date().getTime()}`,
-        fullname: regexUsernameMatch[1],
-        email: authUser.email,
-        is_email_verified: isGoogleAuth,
-        verified_at: isGoogleAuth ? new Date().toDateString() : undefined
-      })
-      .select();
-
-    // Profile created, go to onboarding or lms
-    if (!error && newProfileData) {
-      user.update((_user) => ({
-        ..._user,
-        fetchingUser: false,
-        isLoggedIn: true,
-        currentSession: authUser
-      }));
-
-      profile.set(newProfileData[0]);
-
-      setAnalyticsUser();
-
-      // Fetch language
-      handleLocaleChange(newProfileData[0].locale);
-
-      if (isOrgSite) {
-        const { data, error } = await supabase
-          .from('organizationmember')
-          .insert({
-            organization_id: currentOrgStore.id,
-            profile_id: profileStore.id,
-            role_id: 3
-          })
-          .select();
-        if (error) {
-          console.error('Error adding user to organisation', error);
-        } else {
-          console.log('Success adding user to organisation', data);
-          const memberId = data?.[0]?.id || '';
-
-          currentOrg.update((_currentOrg) => ({
-            ..._currentOrg,
-            memberId
-          }));
-        }
-
-        if (params.get('redirect')) {
-          goto(params.get('redirect') || '');
-        } else if (shouldRedirectOnAuth(path)) {
-          goto('/lms');
-        }
-        return;
-      }
-
-      // On invite page, don't go to onboarding
-      if (!path.includes('invite')) {
-        goto(ROUTE.ONBOARDING);
-      }
-    }
-
-    user.update((_user) => ({
-      ..._user,
-      fetchingUser: false
-    }));
-  } else if (profileData) {
+  // If user is authenticated, profile (User) must exist.
+  if (profileData) {
     // Profile exists, go to profile page
     user.update((_user) => ({
       ..._user,
@@ -180,6 +101,7 @@ export async function getProfile({
       currentSession: authUser
     }));
 
+    // @ts-ignore
     profile.set(profileData);
 
     // Set user in sentry

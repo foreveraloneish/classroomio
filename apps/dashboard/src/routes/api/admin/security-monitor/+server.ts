@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
+import { prisma } from '@cio/database';
 
 export async function GET({ url, request }) {
   // Simple auth check - in production this should be more robust
@@ -16,60 +16,38 @@ export async function GET({ url, request }) {
     );
   }
 
-  const supabase = getServerSupabase();
-
   try {
-    // Get verification token statistics
-    const { data: tokenStats, error: tokenError } = await supabase
-      .from('email_verification_tokens')
-      .select('id, created_at, expires_at, used_at, created_by_ip, used_by_ip, email')
-      .order('created_at', { ascending: false })
-      .limit(100);
+    // Fetch verification tokens from Prisma Verification model
+    // Note: Prisma `Verification` model maps to `verification` table (used by Better-Auth / NextAuth)
+    const tokenStats = await prisma.verification.findMany({
+      orderBy: { expiresAt: 'desc' },
+      take: 100
+    });
 
-    if (tokenError) {
-      console.error('Failed to fetch token stats:', tokenError);
-      return json(
-        {
-          success: false,
-          error: 'Database error'
-        },
-        { status: 500 }
-      );
-    }
-
-    // Calculate stats
     const now = new Date();
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const recent = tokenStats.filter((token) => new Date(token.created_at) > last24Hours);
-    const used = tokenStats.filter((token) => token.used_at);
-    const expired = tokenStats.filter(
-      (token) => new Date(token.expires_at) < now && !token.used_at
-    );
-
-    // Count unique IPs for anomaly detection
-    const uniqueCreationIPs = new Set(tokenStats.map((t) => t.created_by_ip)).size;
-    const uniqueUsageIPs = new Set(tokenStats.filter((t) => t.used_by_ip).map((t) => t.used_by_ip))
-      .size;
+    // We don't have explicit created_at/used fields on `verification`, so infer some metrics
+    const recent = tokenStats.filter((t) => t.expiresAt > last24Hours);
+    const expired = tokenStats.filter((t) => t.expiresAt < now);
 
     return json({
       success: true,
       stats: {
         total_tokens: tokenStats.length,
         recent_24h: recent.length,
-        used_tokens: used.length,
+        used_tokens: 0, // Not tracked in current model
         expired_unused: expired.length,
-        unique_creation_ips: uniqueCreationIPs,
-        unique_usage_ips: uniqueUsageIPs,
-        success_rate:
-          tokenStats.length > 0 ? ((used.length / tokenStats.length) * 100).toFixed(1) : 0
+        unique_creation_ips: 0,
+        unique_usage_ips: 0,
+        success_rate: tokenStats.length > 0 ? ((tokenStats.length - expired.length) / tokenStats.length * 100).toFixed(1) : 0
       },
-      recent_activity: recent.slice(0, 10).map((token) => ({
-        created_at: token.created_at,
-        email: token.email.replace(/(.{2}).*@/, '$1***@'), // Mask email for privacy
-        used: !!token.used_at,
-        expired: new Date(token.expires_at) < now,
-        ip: token.created_by_ip
+      recent_activity: recent.slice(0, 10).map((t) => ({
+        created_at: t.expiresAt ? new Date(t.expiresAt).toISOString() : null,
+        email: (t.identifier || '').replace(/(.{2}).*@/, '$1***@'),
+        used: false,
+        expired: t.expiresAt ? new Date(t.expiresAt) < now : false,
+        ip: null
       }))
     });
   } catch (error) {

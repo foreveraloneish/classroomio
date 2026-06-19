@@ -1,11 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getCurrentOrg } from '$lib/utils/services/org';
-import { getSupabase, supabase } from '$lib/utils/functions/supabase';
 import { getProfile } from '$lib/utils/functions/user';
-
-if (!supabase) {
-  getSupabase();
-}
 
 // we need to know if the email exists or not.
 // with this we can only ask the user to accept

@@ -1,5 +1,12 @@
-import { supabase } from '$lib/utils/functions/supabase';
+import { getAccessToken } from '$lib/utils/functions/auth-client';
 
 export async function takeAttendance(update) {
-  return supabase.from('group_attendance').upsert(update).select();
+  const token = await getAccessToken();
+  const res = await fetch('/api/courses/attendance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: token || '' },
+    body: JSON.stringify(update)
+  });
+
+  return res.json();
 }

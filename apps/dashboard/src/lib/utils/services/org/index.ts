@@ -3,19 +3,14 @@ import { ROLE, ROLE_LABEL } from '$lib/utils/constants/roles';
 import { currentOrg, orgAudience, orgTeam, orgs } from '$lib/utils/store/org';
 
 import type { OrganizationPlan } from '$lib/utils/types';
-import type { PostgrestError } from '@supabase/supabase-js';
 import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
-import { supabase, getAccessToken } from '$lib/utils/functions/supabase';
 
 export async function getOrgTeam(orgId: string) {
-  const accessToken = await getAccessToken();
-
   const response = await fetch(`/api/org/team?orgId=${orgId}`, {
     method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: accessToken
+      'Content-Type': 'application/json'
     }
   });
 
@@ -45,37 +40,8 @@ export async function getOrgTeam(orgId: string) {
 }
 
 export async function getOrganizations(userId: string, isOrgSite?: boolean, orgSiteName?: string) {
-  const { data, error } = await supabase
-    .from('organizationmember')
-    .select(
-      `
-      id,
-      profile_id,
-      role_id,
-      created_at,
-      organization!organizationmember_organization_id_fkey (
-        *,
-        organization_plan(
-          plan_name,
-          is_active,
-          provider,
-          subscriptionId:payload->id,
-          customerId:payload->customerId
-        )
-      )
-    `
-    )
-    .eq('profile_id', userId)
-    .order('id', { ascending: false })
-    .returns<
-      {
-        id: string;
-        profile_id: string;
-        role_id: string;
-        created_at: string;
-        organization: CurrentOrg;
-      }[]
-    >();
+  const response = await fetch('/api/orgs');
+  const { data, error } = await response.json();
 
   const orgsArray: CurrentOrg[] = [];
 
@@ -126,13 +92,10 @@ export async function getOrganizations(userId: string, isOrgSite?: boolean, orgS
 }
 
 export async function getOrgAudience(orgId: string) {
-  const accessToken = await getAccessToken();
-
   const response = await fetch(`/api/org/audience?orgId=${orgId}`, {
     method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: accessToken
+      'Content-Type': 'application/json'
     }
   });
 
@@ -162,20 +125,8 @@ export async function getOrgAudience(orgId: string) {
 }
 
 export async function getCourseBySiteName(siteName: string) {
-  const { data, error } = await supabase
-    .from('course')
-    .select(
-      `
-      *,
-      lessons:lesson(count),
-      group!inner(
-        organization!inner(id, name, siteName, avatar_url)
-      )
-    `
-    )
-    .eq('group.organization.siteName', siteName)
-    .eq('status', 'ACTIVE')
-    .eq('is_published', true);
+  const res = await fetch(`/api/courses/public?siteName=${siteName}`);
+  const { data, error } = await res.json();
 
   if (error) {
     return [];
@@ -203,23 +154,8 @@ const CURRENT_ORG_QUERY = `
   )
 `;
 export async function getCurrentOrg(siteName: string, justGet = false, isCustomDomain = false) {
-  let response: { data: CurrentOrg[] | null; error: PostgrestError | null } | null = null;
-
-  if (isCustomDomain) {
-    response = await supabase
-      .from('organization')
-      .select(CURRENT_ORG_QUERY)
-      .eq('customDomain', siteName)
-      .filter('isCustomDomainVerified', 'eq', true)
-      .returns<CurrentOrg[]>();
-  } else {
-    response = await supabase
-      .from('organization')
-      .select(CURRENT_ORG_QUERY)
-      .eq('siteName', siteName)
-      .returns<CurrentOrg[]>();
-  }
-  const { data, error } = response;
+  const res = await fetch(`/api/org/current?siteName=${siteName}&isCustomDomain=${isCustomDomain}`);
+  const { data, error } = await res.json();
 
   const isDataEmpty = !data?.[0];
 
@@ -238,18 +174,15 @@ export async function getCurrentOrg(siteName: string, justGet = false, isCustomD
 }
 
 export async function updateOrgPlan(params: {
-  supabase: typeof supabase;
   subscriptionId: string;
   data: OrganizationPlan['payload'];
 }) {
-  return await params.supabase
-    .from('organization_plan')
-    .update({
-      payload: params.data
-    })
-    .match({
-      subscription_id: params.subscriptionId
-    });
+  const res = await fetch('/api/org/plan', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  return await res.json();
 }
 
 export async function createOrgPlan(params: {
@@ -258,32 +191,23 @@ export async function createOrgPlan(params: {
   subscriptionId: OrganizationPlan['subscription_id'];
   triggeredBy: OrganizationPlan['triggered_by'];
   data: OrganizationPlan['payload'];
-  supabase: typeof supabase;
 }) {
-  return await params.supabase.from('organization_plan').insert({
-    activated_at: new Date().toDateString(),
-    org_id: params.orgId,
-    triggered_by: params.triggeredBy,
-    plan_name: params.planName,
-    is_active: true,
-    payload: params.data,
-    subscription_id: params.subscriptionId,
-    provider: 'polar'
+  const res = await fetch('/api/org/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
   });
+  return await res.json();
 }
 
 export async function cancelOrgPlan(params: {
   subscriptionId: string;
   data: OrganizationPlan['payload'];
 }) {
-  return await supabase
-    .from('organization_plan')
-    .update({
-      is_active: false,
-      deactivated_at: new Date().toDateString(),
-      payload: params.data
-    })
-    .match({
-      subscription_id: params.subscriptionId
-    });
+  const res = await fetch('/api/org/plan/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  });
+  return await res.json();
 }

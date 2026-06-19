@@ -3,15 +3,14 @@
   import TextField from '$lib/components/Form/TextField.svelte';
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { LOGIN_FIELDS } from '$lib/utils/constants/authentication';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { t } from '$lib/utils/functions/translations';
   import { authValidation } from '$lib/utils/functions/validator';
   import { capturePosthogEvent } from '$lib/utils/services/posthog';
   import { globalStore } from '$lib/utils/store/app';
   import { currentOrg } from '$lib/utils/store/org';
+  import { authClient } from '$lib/auth-client';
 
   let formRef: HTMLFormElement;
-  let supabase = getSupabase();
   let fields = Object.assign({}, LOGIN_FIELDS);
   let submitError: string;
   let loading = false;
@@ -28,7 +27,7 @@
 
     try {
       loading = true;
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await authClient.signIn.email({
         email: fields.email,
         password: fields.password
       });
@@ -55,7 +54,7 @@
   <title>Welcome back to {$currentOrg.name || 'ClassroomIO'}</title>
 </svelte:head>
 
-<AuthUI {supabase} isLogin={true} {handleSubmit} isLoading={loading} bind:formRef>
+<AuthUI isLogin={true} {handleSubmit} isLoading={loading} bind:formRef>
   <div class="mt-4 w-full">
     <p class="mb-6 text-lg font-semibold dark:text-white">{$t('login.welcome')}</p>
     <TextField

@@ -3,7 +3,7 @@ import { type ApiClientConfig, ApiError, type RequestConfig } from './types';
 import { DEFAULT_CONFIG } from './constants';
 import { delay } from './utils';
 import { env } from '$env/dynamic/public';
-import { getAccessToken } from '$lib/utils/functions/supabase';
+import { getAccessToken } from '$lib/utils/functions/auth-client';
 import { hcWithType } from '@cio/api/rpc-types';
 
 class ApiClient {
@@ -60,7 +60,7 @@ class ApiClient {
       try {
         const token = await getAccessToken();
         if (token) {
-          headers.set('Authorization', `Bearer ${token}`);
+          headers.set('Authorization', token);
         }
       } catch (error) {
         console.warn('Failed to get access token:', error);

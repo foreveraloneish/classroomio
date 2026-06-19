@@ -1,5 +1,4 @@
 import type { UserLessonDataType } from '$lib/utils/types';
-import { supabase } from '$lib/utils/functions/supabase';
 
 function getFirstAndLastDayOfMonth(): { firstDay: string; lastDay: string } {
   const date = new Date();
@@ -29,19 +28,20 @@ export async function fetchUserUpcomingData(
 
   const { lastDay, firstDay } = getFirstAndLastDayOfMonth();
 
-  const { data: userUpcomingData } = await supabase
-    .rpc('get_user_upcoming_lessons', {
-      profile_id_arg: profileId,
-      org_id_arg: orgId
-    })
-    .filter('lesson_at', 'gte', firstDay)
-    .filter('lesson_at', 'lte', lastDay);
+  try {
+    const res = await fetch('/api/analytics/upcoming-lessons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId, orgId, startAt: firstDay, endAt: lastDay })
+    });
 
-  console.log(`userUpcomingData`, userUpcomingData);
+    if (!res.ok) return [];
 
-  if (!Array.isArray(userUpcomingData)) {
+    const result = await res.json();
+
+    return result.data || [];
+  } catch (err) {
+    console.error(err);
     return [];
   }
-
-  return userUpcomingData;
 }

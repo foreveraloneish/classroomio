@@ -1,0 +1,672 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Better-Auth Models
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?   // Mapped from fullname
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?   // Mapped from avatar_url
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+
+  // Custom Fields (migrated from Profile)
+  fullname            String? // Keep this for compatibility or map to name
+  username            String?   @unique
+  avatar_url          String?
+  can_add_course      Boolean   @default(true)
+  role                String?
+  goal                String?
+  source              String?
+  metadata            Json?
+  telegram_chat_id    BigInt?
+  is_restricted       Boolean   @default(false)
+  locale              String?   @default("en")
+
+  // Relations
+  organizationMembers OrganizationMember[]
+  groupMembers        GroupMember[]
+  lessonCompletions   LessonCompletion[]
+  lessonsTaught       Lesson[] // teacher_id
+
+  // Community
+  // communityQuestions  CommunityQuestion[] // Linked via OrganizationMember
+  // communityAnswers    CommunityAnswer[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id           String    @id
+  userId       String
+  accountId    String
+  providerId   String
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  password     String?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+
+  @@map("verification")
+}
+
+// Application Models
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  siteName    String?  @unique
+  avatar_url  String?
+  settings    Json?    @default("{}")
+  landingpage Json?    @default("{}")
+  theme       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Custom Domain fields
+  customCode             String?
+  customDomain           String? @unique
+  favicon                String?
+  isCustomDomainVerified Boolean @default(false)
+  is_restricted          Boolean @default(false)
+  customization          Json?   @default("{\"apps\":{\"poll\":true,\"comments\":true},\"course\":{\"grading\":true,\"newsfeed\":true},\"dashboard\":{\"exercise\":true,\"community\":true,\"bannerText\":\"\",\"bannerImage\":\"\"}}")
+
+  // Relations
+  members       OrganizationMember[]
+  groups        Group[]
+  contacts      OrganizationContact[]
+  emailList     OrganizationEmailList[]
+  quizzes       Quiz[]
+  communityQuestions CommunityQuestion[]
+  plans         OrganizationPlan[]
+
+  @@map("organization")
+}
+
+model OrganizationMember {
+  id              BigInt   @id @default(autoincrement())
+  organization_id String
+  role_id         BigInt
+  profile_id      String? // References User.id
+  email           String?
+  verified        Boolean  @default(false)
+  created_at      DateTime @default(now())
+
+  organization Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [profile_id], references: [id])
+  role         Role         @relation(fields: [role_id], references: [id])
+
+  // Community Relations (SQL says author_id is BigInt referencing OrganizationMember.id)
+  communityQuestions CommunityQuestion[]
+  communityAnswers   CommunityAnswer[]
+  plansTriggered     OrganizationPlan[]
+
+  @@map("organizationmember")
+}
+
+model OrganizationContact {
+  id              BigInt   @id @default(autoincrement())
+  created_at      DateTime @default(now())
+  email           String?
+  phone           String?
+  name            String?
+  message         String?
+  organization_id String?
+
+  organization    Organization? @relation(fields: [organization_id], references: [id])
+
+  @@map("organization_contacts")
+}
+
+model OrganizationEmailList {
+  id              BigInt   @id @default(autoincrement())
+  created_at      DateTime @default(now())
+  email           String?
+  organization_id String?
+
+  organization    Organization? @relation(fields: [organization_id], references: [id])
+
+  @@map("organization_emaillist")
+}
+
+model OrganizationPlan {
+  id             BigInt   @id @default(autoincrement())
+  activated_at   DateTime @default(now())
+  org_id         String?
+  plan_name      String?
+  is_active      Boolean?
+  deactivated_at DateTime?
+  updated_at     DateTime @default(now()) @updatedAt
+  payload        Json?
+  triggered_by   BigInt?
+  provider       String?  @default("lmz")
+  subscription_id String? @unique
+
+  organization       Organization?       @relation(fields: [org_id], references: [id])
+  triggeredByMember  OrganizationMember? @relation(fields: [triggered_by], references: [id])
+
+  @@map("organization_plan")
+}
+
+model Role {
+  id          BigInt   @id @default(autoincrement())
+  type        String
+  description String?
+  updated_at  DateTime @default(now()) @updatedAt
+  created_at  DateTime @default(now())
+
+  organizationMembers OrganizationMember[]
+  groupMembers        GroupMember[]
+
+  @@map("role")
+}
+
+model Group {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+  organization_id String?
+
+  organization Organization? @relation(fields: [organization_id], references: [id])
+  courses      Course[]
+  members      GroupMember[]
+
+  @@map("group")
+}
+
+model GroupMember {
+  id                  String   @id @default(uuid())
+  group_id            String
+  role_id             BigInt
+  profile_id          String?
+  email               String?
+  created_at          DateTime @default(now())
+  assigned_student_id String?
+
+  group   Group @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  role    Role  @relation(fields: [role_id], references: [id])
+  user    User? @relation(fields: [profile_id], references: [id])
+
+  submissions        Submission[]
+  lessonComments     LessonComment[]
+  questionAnswers    QuestionAnswer[]
+  pollSubmissions    AppsPollSubmission[]
+  pollsAuthored      AppsPoll[]
+  attendanceRecords  GroupAttendance[]
+  newsfeedPosts      CourseNewsfeed[]
+  newsfeedComments   CourseNewsfeedComment[]
+
+  @@unique([group_id, profile_id, email])
+  @@unique([group_id, email])
+  @@unique([group_id, profile_id])
+  @@map("groupmember")
+}
+
+model Course {
+  id                          String   @id @default(uuid())
+  title                       String
+  description                 String
+  overview                    String?  @default("Welcome to this amazing course 🚀 ")
+  group_id                    String?
+  is_template                 Boolean? @default(true)
+  logo                        String   @default("")
+  slug                        String?  @unique
+  metadata                    Json     @default("{\"goals\": \"\", \"description\": \"\", \"requirements\": \"\"}")
+  cost                        BigInt?  @default(0)
+  currency                    String   @default("NGN")
+  banner_image                String?
+  is_published                Boolean? @default(false)
+  is_certificate_downloadable Boolean? @default(false)
+  certificate_theme           String?
+  status                      String   @default("ACTIVE")
+  version                     String?  @default("V1")
+  created_at                  DateTime @default(now())
+  updated_at                  DateTime @default(now()) @updatedAt
+
+  group           Group?   @relation(fields: [group_id], references: [id])
+  lessons         Lesson[]
+  submissions     Submission[]
+  attendance      GroupAttendance[]
+  polls           AppsPoll[]
+  lesson_sections LessonSection[]
+  newsfeed        CourseNewsfeed[]
+
+  @@map("course")
+}
+
+model Lesson {
+  id          String   @id @default(uuid())
+  course_id   String
+  title       String
+  note        String?
+  video_url   String?
+  slide_url   String?
+  public      Boolean? @default(false)
+  lesson_at   DateTime @default(now())
+  teacher_id  String?
+  is_complete Boolean? @default(false)
+  call_url    String?
+  order       BigInt?
+  is_unlocked Boolean? @default(false)
+  videos      Json?    @default("[]")
+  section_id  String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  course      Course   @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  teacher     User?    @relation(fields: [teacher_id], references: [id])
+  section     LessonSection? @relation(fields: [section_id], references: [id])
+
+  exercises   Exercise[]
+  comments    LessonComment[]
+  completions LessonCompletion[]
+  attendance  GroupAttendance[]
+  lesson_languages LessonLanguage[]
+
+  @@map("lesson")
+}
+
+model LessonSection {
+  id         String   @id @default(uuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+  title      String?
+  order      BigInt?  @default(0)
+  course_id  String?
+
+  course     Course?  @relation(fields: [course_id], references: [id])
+  lessons    Lesson[]
+
+  @@map("lesson_section")
+}
+
+model LessonLanguage {
+  id        BigInt   @id @default(autoincrement())
+  content   String?
+  lesson_id String?
+  locale    String?  @default("en")
+
+  lesson    Lesson?  @relation(fields: [lesson_id], references: [id])
+  history   LessonLanguageHistory[]
+
+  @@map("lesson_language")
+}
+
+model LessonLanguageHistory {
+  id                 BigInt   @id @default(autoincrement())
+  lesson_language_id BigInt?
+  old_content        String?
+  new_content        String?
+  timestamp          DateTime @default(now())
+
+  lessonLanguage     LessonLanguage? @relation(fields: [lesson_language_id], references: [id])
+
+  @@map("lesson_language_history")
+}
+
+model LessonComment {
+  id              BigInt   @id @default(autoincrement())
+  lesson_id       String?
+  groupmember_id  String?
+  comment         String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  lesson      Lesson?      @relation(fields: [lesson_id], references: [id])
+  author      GroupMember? @relation(fields: [groupmember_id], references: [id])
+
+  @@map("lesson_comment")
+}
+
+model LessonCompletion {
+  id          BigInt   @id @default(autoincrement())
+  lesson_id   String?
+  profile_id  String?
+  is_complete Boolean? @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  lesson Lesson? @relation(fields: [lesson_id], references: [id])
+  user   User?   @relation(fields: [profile_id], references: [id])
+
+  @@map("lesson_completion")
+}
+
+model Exercise {
+  id          String    @id @default(uuid())
+  lesson_id   String?
+  title       String
+  description String?
+  due_by      DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @default(now()) @updatedAt
+
+  lesson      Lesson?      @relation(fields: [lesson_id], references: [id])
+  questions   Question[]
+  submissions Submission[]
+
+  @@map("exercise")
+}
+
+model Question {
+  id               BigInt   @id @default(autoincrement())
+  exercise_id      String
+  question_type_id BigInt
+  title            String
+  name             String?  @default(uuid()) // Used as UUID in SQL
+  points           Float?
+  order            BigInt?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
+
+  exercise     Exercise     @relation(fields: [exercise_id], references: [id], onDelete: Cascade)
+  questionType QuestionType @relation(fields: [question_type_id], references: [id])
+
+  options      Option[]
+  answers      QuestionAnswer[]
+
+  @@map("question")
+}
+
+model QuestionType {
+  id         BigInt     @id @default(autoincrement())
+  label      String
+  typename   String?
+  created_at DateTime   @default(now())
+  updated_at DateTime   @default(now()) @updatedAt
+
+  questions Question[]
+
+  @@map("question_type")
+}
+
+model Option {
+  id          BigInt   @id @default(autoincrement())
+  question_id BigInt
+  label       String
+  is_correct  Boolean  @default(false)
+  value       String?  @default(uuid())
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  question Question @relation(fields: [question_id], references: [id], onDelete: Cascade)
+
+  @@map("option")
+}
+
+model Submission {
+  id           String   @id @default(uuid())
+  exercise_id  String
+  course_id    String?
+  submitted_by String?
+  reviewer_id  BigInt?
+  status_id    BigInt?  @default(1)
+  total        BigInt?  @default(0)
+  feedback     String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @default(now()) @updatedAt
+
+  exercise        Exercise         @relation(fields: [exercise_id], references: [id])
+  course          Course?          @relation(fields: [course_id], references: [id])
+  groupMember     GroupMember?     @relation(fields: [submitted_by], references: [id])
+  status          SubmissionStatus? @relation(fields: [status_id], references: [id])
+
+  questionAnswers QuestionAnswer[]
+
+  @@map("submission")
+}
+
+model SubmissionStatus {
+  id         BigInt   @id @default(autoincrement())
+  label      String
+  updated_at DateTime @default(now())
+
+  submissions Submission[]
+
+  @@map("submissionstatus")
+}
+
+model QuestionAnswer {
+  id              BigInt   @id @default(autoincrement())
+  question_id     BigInt
+  group_member_id String
+  submission_id   String?
+  answers         String[]
+  open_answer     String?
+  point           BigInt?  @default(0)
+
+  question    Question     @relation(fields: [question_id], references: [id])
+  groupMember GroupMember  @relation(fields: [group_member_id], references: [id])
+  submission  Submission?  @relation(fields: [submission_id], references: [id])
+
+  @@map("question_answer")
+}
+
+model GroupAttendance {
+  id         BigInt   @id @default(autoincrement())
+  course_id  String?
+  student_id String?
+  lesson_id  String
+  is_present Boolean? @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  course  Course?      @relation(fields: [course_id], references: [id])
+  student GroupMember? @relation(fields: [student_id], references: [id])
+  lesson  Lesson       @relation(fields: [lesson_id], references: [id])
+
+  @@map("group_attendance")
+}
+
+// Community
+
+model CommunityQuestion {
+  id              BigInt   @id @default(autoincrement())
+  organization_id String?
+  author_id       BigInt?
+  title           String?
+  body            String?
+  votes           BigInt?  @default(0)
+  slug            String?
+  created_at      DateTime @default(now())
+
+  organization Organization?       @relation(fields: [organization_id], references: [id])
+  author       OrganizationMember? @relation(fields: [author_id], references: [id])
+
+  answers      CommunityAnswer[]
+
+  // Custom Relation to User if author_id matches?
+  // SQL says author_id references OrganizationMember(id).
+
+  @@map("community_question")
+}
+
+model CommunityAnswer {
+  id          String   @id @default(uuid())
+  question_id BigInt?
+  author_id   BigInt?
+  body        String?
+  votes       BigInt?
+  created_at  DateTime @default(now())
+
+  question CommunityQuestion?  @relation(fields: [question_id], references: [id])
+  author   OrganizationMember? @relation(fields: [author_id], references: [id])
+
+  @@map("community_answer")
+}
+
+// Polls
+
+model AppsPoll {
+  id         String    @id @default(uuid())
+  courseId   String?
+  authorId   String?
+  question   String?
+  isPublic   Boolean?
+  status     String?   @default("draft")
+  expiration DateTime?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  course  Course?      @relation(fields: [courseId], references: [id])
+  author  GroupMember? @relation(fields: [authorId], references: [id])
+
+  options     AppsPollOption[]
+  submissions AppsPollSubmission[]
+
+  @@map("apps_poll")
+}
+
+model AppsPollOption {
+  id         BigInt    @id @default(autoincrement())
+  poll_id    String?
+  label      String?
+  created_at DateTime  @default(now())
+  updated_at DateTime? @updatedAt
+
+  poll        AppsPoll?            @relation(fields: [poll_id], references: [id])
+  submissions AppsPollSubmission[]
+
+  @@map("apps_poll_option")
+}
+
+model AppsPollSubmission {
+  id             BigInt   @id @default(autoincrement())
+  poll_id        String?
+  poll_option_id BigInt?
+  selected_by_id String?
+  created_at     DateTime @default(now())
+
+  poll       AppsPoll?       @relation(fields: [poll_id], references: [id])
+  pollOption AppsPollOption? @relation(fields: [poll_option_id], references: [id])
+  selectedBy GroupMember?    @relation(fields: [selected_by_id], references: [id])
+
+  @@map("apps_poll_submission")
+}
+
+// Quiz
+
+model Quiz {
+  id              String   @id @default(uuid())
+  organization_id String
+  title           String?
+  questions       Json?
+  timelimit       String?  @default("10s")
+  theme           String?  @default("standard")
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [organization_id], references: [id])
+  plays        QuizPlay[]
+
+  @@map("quiz")
+}
+
+model QuizPlay {
+  id                        BigInt   @id @default(autoincrement())
+  quiz_id                   String?
+  players                   Json?    @default("[]")
+  started                   Boolean? @default(false)
+  currentQuestionId         BigInt?  @default(0)
+  showCurrentQuestionAnswer Boolean? @default(false)
+  isLastQuestion            Boolean?
+  step                      String?  @default("CONNECT_TO_PLAY")
+  studentStep               String?  @default("PIN_SETUP")
+  pin                       String?  @unique
+  created_at                DateTime @default(now())
+  updated_at                DateTime @default(now()) @updatedAt
+
+  quiz Quiz? @relation(fields: [quiz_id], references: [id])
+
+  @@map("quiz_play")
+}
+
+model VideoTranscript {
+  id         BigInt   @id @default(autoincrement())
+  muse_svid  String?
+  transcript String?
+  downloaded Boolean? @default(false)
+  link       String?
+  created_at DateTime @default(now())
+
+  @@map("video_transcripts")
+}
+
+model WaitingList {
+  id         BigInt   @id @default(autoincrement())
+  email      String   @unique
+  created_at DateTime @default(now())
+
+  @@map("waitinglist")
+}
+
+model Currency {
+  id         BigInt   @id @default(autoincrement())
+  name       String?
+  created_at DateTime @default(now())
+
+  @@map("currency")
+}
+
+model CourseNewsfeed {
+  id         String   @id @default(uuid())
+  content    String?
+  author_id  String?
+  course_id  String?
+  reaction   Json?    @default("{\"like\": []}")
+  is_pinned  Boolean? @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  course   Course?       @relation(fields: [course_id], references: [id])
+  author   GroupMember?  @relation(fields: [author_id], references: [id])
+  comments CourseNewsfeedComment[]
+
+  @@map("course_newsfeed")
+}
+
+model CourseNewsfeedComment {
+  id                 String   @id @default(uuid())
+  content            String?
+  author_id          String?
+  course_newsfeed_id String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @default(now()) @updatedAt
+
+  newsfeed CourseNewsfeed? @relation(fields: [course_newsfeed_id], references: [id])
+  author   GroupMember?    @relation(fields: [author_id], references: [id])
+
+  @@map("course_newsfeed_comment")
+}

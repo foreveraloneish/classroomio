@@ -12,8 +12,7 @@
     "release": "standard-version",
     "ci": "cypress run",
     "dashboard:start": "pnpm start --filter @cio/dashboard",
-    "api:start": "pnpm start --filter @cio/api",
-    "supabase:push": "pnpx supabase link --project-ref $PROJECT_ID && pnpx supabase db push --include-all"
+    "api:start": "pnpm start --filter @cio/api"
   },
   "license": "MIT",
   "dependencies": {

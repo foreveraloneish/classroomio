@@ -8,17 +8,23 @@ import {
   S3Client
 } from '@aws-sdk/client-s3';
 
-import { CLOUDFLARE } from '$src/constants';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export type GetSignedUrlParameters = Parameters<typeof getSignedUrl>;
 
+// Use Environment variables for MinIO/S3
+const S3_ENDPOINT = process.env.S3_ENDPOINT || 'http://localhost:9000';
+const S3_REGION = process.env.S3_REGION || 'us-east-1';
+const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || 'minioadmin';
+const S3_SECRET_KEY = process.env.S3_SECRET_KEY || 'minioadmin';
+
 export const s3Client = new S3Client({
-  region: 'auto',
-  endpoint: `https://${CLOUDFLARE.CONFIGS.ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  region: S3_REGION,
+  endpoint: S3_ENDPOINT,
+  forcePathStyle: true, // Needed for MinIO usually
   credentials: {
-    accessKeyId: CLOUDFLARE.CONFIGS.ACCESS_KEY,
-    secretAccessKey: CLOUDFLARE.CONFIGS.SECRET_ACCESS_KEY
+    accessKeyId: S3_ACCESS_KEY,
+    secretAccessKey: S3_SECRET_KEY
   }
 });
 

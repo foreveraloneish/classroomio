@@ -54,14 +54,12 @@ docker pull classroomio/dashboard:latest
 ```bash
 # API
 docker run -d -p 3081:3081 \
-  -e PUBLIC_SUPABASE_ANON_KEY=your_key \
-  -e PUBLIC_SUPABASE_URL=your_url \
+  # Provide required environment variables (see apps/api/.env.example) \
   classroomio/api:latest
 
 # Dashboard
 docker run -d -p 3082:3082 \
-  -e PUBLIC_SUPABASE_ANON_KEY=your_key \
-  -e PUBLIC_SUPABASE_URL=your_url \
+  # Provide required environment variables (see apps/dashboard/.env.example) \
   classroomio/dashboard:latest
 ```
 

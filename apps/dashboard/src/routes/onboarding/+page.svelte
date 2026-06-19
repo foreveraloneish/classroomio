@@ -8,7 +8,6 @@
   import { VARIANTS } from '$lib/components/PrimaryButton/constants';
   import { profile } from '$lib/utils/store/user';
   import { onboardingValidation } from '$lib/utils/functions/validator';
-  import { supabase } from '$lib/utils/functions/supabase';
   import { blockedSubdomain } from '$lib/utils/constants/app';
   import { getOrganizations } from '$lib/utils/services/org';
   import { generateSitename } from '$lib/utils/functions/org';
@@ -137,46 +136,52 @@
         return;
       }
 
-      const { data: org, error } = await supabase
-        .from('organization')
-        .insert({
-          name: fields.orgName,
-          siteName: fields.siteName
-        })
-        .select();
-      console.log('Create organisation', org);
-      if (error) {
+      // Create Organization via API
+      const res = await fetch('/api/org/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              name: fields.orgName,
+              siteName: fields.siteName
+          })
+      });
+      const { data: org, error } = await res.json();
+
+      if (error || !org) {
         console.log('Error: create organisation', error);
         errors.siteName = 'Sitename already exists.';
         loading = false;
         return;
       }
 
-      if (Array.isArray(org) && org.length) {
-        const orgData = org[0];
-        const { data, error } = await supabase
-          .from('organizationmember')
-          .insert({
-            organization_id: orgData.id,
-            profile_id: $profile.id,
-            role_id: 1,
-            verified: true
-          })
-          .select();
-        console.log('Create organisation member', data);
+      const orgData = org[0];
 
-        if (error) {
-          console.log('Error: create organisation member', error);
+      // Join Organization via API
+      const joinRes = await fetch('/api/org/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              organization_id: orgData.id,
+              role_id: 1
+          })
+      });
+      const { data: memberData, error: memberError } = await joinRes.json();
+
+      if (memberError) {
+          console.log('Error: create organisation member', memberError);
           errors.siteName = $t('add_org.error_organization');
 
-          // Delete organization so it can be recreated.
-          await supabase.from('organization').delete().match({ siteName: fields.siteName });
+          // Delete organization
+          await fetch('/api/org/create', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ siteName: fields.siteName })
+          });
           loading = false;
           return;
-        }
-
-        await getOrganizations($profile.id);
       }
+
+      await getOrganizations($profile.id);
 
       // client
     }
@@ -185,14 +190,16 @@
       // Submit filled
 
       // Set extra metadata based off location
-      await supabase
-        .from('profile')
-        .update({
-          ...fields,
-          orgName: undefined,
-          siteName: undefined
-        })
-        .match({ id: $profile.id });
+      await fetch('/api/profile/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              id: $profile.id,
+              ...fields,
+              orgName: undefined,
+              siteName: undefined
+          })
+      });
 
       loading = false;
 

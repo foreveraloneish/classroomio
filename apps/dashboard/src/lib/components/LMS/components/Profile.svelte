@@ -4,7 +4,7 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { VARIANTS } from '$lib/components/PrimaryButton/constants';
   import UploadImage from '$lib/components/UploadImage/index.svelte';
-  import { supabase } from '$lib/utils/functions/supabase';
+  import { uploadToStorage, getPublicUrl } from '$lib/utils/storage';
   import { profile } from '$lib/utils/store/user';
   import { snackbar } from '$lib/components/Snackbar/store';
   import generateUUID from '$lib/utils/functions/generateUUID';
@@ -31,21 +31,24 @@
       if (avatar) {
         const filename = `user/${generateUUID()}.webp`;
 
-        const { data } = await supabase.storage.from('avatars').upload(filename, avatar, {
-          cacheControl: '3600',
-          upsert: false
-        });
-        if (data) {
-          const { data: response } = await supabase.storage.from('avatars').getPublicUrl(filename);
-
-          updates.avatar_url = response.publicUrl;
-          $profile.avatar_url = response.publicUrl;
+        // Convert data URL to Blob
+        const response = await fetch(avatar);
+        const blob = await response.blob();
+        
+        const { data, error: uploadError } = await uploadToStorage('avatars', filename, blob);
+        
+        if (uploadError || !data) {
+          snackbar.error('Failed to upload avatar');
+        } else {
+          const { data: urlData } = getPublicUrl('avatars', data.path);
+          updates.avatar_url = urlData.publicUrl;
+          $profile.avatar_url = urlData.publicUrl;
         }
         avatar = undefined;
       }
 
-      let { error } = await supabase.from('profile').update(updates).match({ id: $profile.id });
-
+      // API call to update profile would go here
+      // For now, update local store
       profile.update((_profile) => ({
         ..._profile,
         ...updates

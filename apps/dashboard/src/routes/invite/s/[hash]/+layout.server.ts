@@ -1,10 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { getSupabase, supabase } from '$lib/utils/functions/supabase';
 import { getCurrentOrg } from '$lib/utils/services/org';
-
-if (!supabase) {
-  getSupabase();
-}
 
 export const load = async ({ params = { hash: '' } }) => {
   try {

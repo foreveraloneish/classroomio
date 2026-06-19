@@ -3,14 +3,13 @@
   import TextField from '$lib/components/Form/TextField.svelte';
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import { VARIANTS } from '$lib/components/PrimaryButton/constants';
-  import { getSupabase } from '$lib/utils/functions/supabase';
+  import { authClient } from '$lib/auth-client';
   import { forgotValidation } from '$lib/utils/functions/validator';
   import { ROUTE } from '$lib/utils/constants/routes';
   import { FORGOT_PASSWORD_FIELDS } from '$lib/utils/constants/authentication';
   import AuthUI from '$lib/components/AuthUI/index.svelte';
   import EmailSentIcon from '$lib/components/Icons/EmailSentIcon.svelte';
 
-  let supabase = getSupabase();
   let fields = Object.assign({}, FORGOT_PASSWORD_FIELDS);
   let submitError;
   let loading = false;
@@ -27,7 +26,8 @@
 
     try {
       loading = true;
-      const { data, error } = await supabase.auth.resetPasswordForEmail(fields.email, {
+      const { data, error } = await authClient.forgetPassword({
+        email: fields.email,
         redirectTo: `${window.location.origin}/reset`
       });
       console.log('data', data);
@@ -46,7 +46,7 @@
   <title>Reset Password - ClassroomIO</title>
 </svelte:head>
 
-<AuthUI {supabase} {handleSubmit} showOnlyContent={true} showLogo={!success}>
+<AuthUI {handleSubmit} showOnlyContent={true} showLogo={!success}>
   {#if success}
     <div class="mt-4 w-full flex items-center justify-center flex-col">
       <EmailSentIcon />

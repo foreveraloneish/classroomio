@@ -8,8 +8,8 @@
   import { VARIANTS } from '$lib/components/PrimaryButton/constants';
   import { SIGNUP_FIELDS } from '$lib/utils/constants/authentication';
   import { logout } from '$lib/utils/functions/logout';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { setTheme } from '$lib/utils/functions/theme';
+  import { authClient } from '$lib/auth-client';
   import { t } from '$lib/utils/functions/translations';
   import { profile, user } from '$lib/utils/store/user';
   import {
@@ -24,7 +24,6 @@
 
   export let data;
 
-  let supabase = getSupabase();
   let fields = Object.assign({}, SIGNUP_FIELDS);
   let loading = false;
   let isLoggingOut = false;
@@ -44,16 +43,22 @@
   async function joinOrg(profileId: string, email: string) {
     if (!profileId || !email || !data.invite.currentOrg?.id) return;
 
-    // Update member response
-    const updateMemberRes = await supabase
-      .from('organizationmember')
-      .update({
-        verified: true,
-        profile_id: profileId
-      })
-      .match({ email: email, organization_id: data.invite.currentOrg?.id });
+    // Update member response via API
+    const res = await fetch('/api/org/accept-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            email,
+            organization_id: data.invite.currentOrg?.id
+        })
+    });
+    const { error } = await res.json();
 
-    console.log('Update member response', updateMemberRes);
+    if (error) {
+        console.error('Error joining org', error);
+        snackbar.error(error.message || 'Error joining organization');
+        return;
+    }
 
     formRef?.reset();
 
@@ -65,13 +70,13 @@
       throw $t('login.validation.unable_to_create_profile');
     }
 
-    const res = await supabase.auth.signInWithPassword({
-      email,
-      password: fields.password
+    const { error } = await authClient.signIn.email({
+        email,
+        password: fields.password
     });
 
-    if (res.error) {
-      throw res.error;
+    if (error) {
+      throw error;
     }
   }
 
@@ -99,37 +104,27 @@
 
       if (!data.invite.profile) {
         // Signup
-        const { data: signupData, error } = await supabase.auth.signUp({
-          email: data.invite.email,
-          password: fields.password
+        const username = fields.name.toLowerCase().replace(' ', '-') + new Date().getTime();
+        const { data: signupData, error } = await authClient.signUp.email({
+            email: data.invite.email,
+            password: fields.password,
+            name: fields.name,
+            username,
+            fullname: fields.name
         });
 
-        console.log('Signup', signupData);
         if (error) throw error;
 
-        if (!signupData.user) {
+        if (!signupData?.user) {
           throw $t('login.validation.user_cannot_be_created');
         }
 
-        // Insert profile
-        const userId = signupData.user.id;
-        const profileRes = await supabase
-          .from('profile')
-          .insert({
-            id: userId,
-            username: fields.name.toLowerCase().replace(' ', '-') + new Date().getTime(),
-            fullname: fields.name,
-            email: data.invite.email
-          })
-          .select();
+        // Profile is automatically created by Better-Auth mapping in schema
+        // Or we can manually update profile if needed via API
 
-        console.log('Insert profile', profileRes.data);
-
-        if (profileRes.error) {
-          throw profileRes.error;
-        }
-
-        profile = profileRes.data[0] || {};
+        // Use the returned user as profile
+        // @ts-ignore
+        profile = signupData.user;
       }
 
       if (!profile?.id) {
@@ -187,7 +182,6 @@
 </svelte:head>
 
 <AuthUI
-  {supabase}
   redirectPathname={$page.url.pathname}
   isLogin={false}
   {handleSubmit}

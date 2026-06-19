@@ -6,7 +6,6 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import SenjaEmbed from '$lib/components/Senja/Embed.svelte';
   import { SIGNUP_FIELDS } from '$lib/utils/constants/authentication';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { t } from '$lib/utils/functions/translations';
   import {
     authValidation,
@@ -17,8 +16,8 @@
   import { globalStore } from '$lib/utils/store/app';
   import { currentOrg } from '$lib/utils/store/org';
   import { profile } from '$lib/utils/store/user';
+  import { authClient } from '$lib/auth-client';
 
-  let supabase = getSupabase();
   let fields = Object.assign({}, SIGNUP_FIELDS);
   let loading = false;
   let success = false;
@@ -46,56 +45,56 @@
     try {
       loading = true;
 
-      const {
-        data: { session },
-        error
-      } = await supabase.auth.signUp({
+      const [regexUsernameMatch] = [...(fields.email?.matchAll(/(.*)@/g) || [])];
+      const username = regexUsernameMatch[1] + `${new Date().getTime()}`;
+      const fullname = regexUsernameMatch[1];
+
+      const { data, error } = await authClient.signUp.email({
         email: fields.email,
-        password: fields.password
+        password: fields.password,
+        name: fullname,
+        username: username,
+        fullname: fullname
       });
-      console.log('session', session);
+      console.log('data', data);
 
       if (error) throw error;
 
-      const { user: authUser } = session || {};
+      const authUser = data?.user;
       if (!authUser) {
         throw 'Error creating user';
       }
 
-      if (!$currentOrg.id) return;
-
-      const [regexUsernameMatch] = [...(authUser.email?.matchAll(/(.*)@/g) || [])];
-
-      const profileRes = await supabase
-        .from('profile')
-        .insert({
-          id: authUser.id,
-          username: regexUsernameMatch[1] + `${new Date().getTime()}`,
-          fullname: regexUsernameMatch[1],
-          email: authUser.email
-        })
-        .select();
-      console.log('profileRes', profileRes);
-
-      if (profileRes.error) {
-        throw profileRes.error;
-      }
-
       // Setting profile
-      console.log('setting profile', profileRes.data[0]);
-      profile.set(profileRes.data[0]);
+      // @ts-ignore
+      profile.set(authUser);
 
       capturePosthogEvent('user_signed_up', {
-        distinct_id: $profile.id || '',
+        distinct_id: authUser.id || '',
         email: authUser.email,
-        username: regexUsernameMatch[1]
+        username: username
       });
 
       if ($globalStore.isOrgSite) {
+        // Join the organization
+        const joinRes = await fetch('/api/org/join', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organization_id: $currentOrg.id,
+            role_id: 3
+          })
+        });
+        const { data: joinData } = await joinRes.json();
+
+        if (joinData?.[0]?.id) {
+          currentOrg.update(c => ({ ...c, memberId: joinData[0].id }));
+        }
+
         capturePosthogEvent('student_signed_up', {
-          distinct_id: $profile.id || '',
+          distinct_id: authUser.id || '',
           email: authUser.email,
-          username: regexUsernameMatch[1]
+          username: username
         });
       }
 
@@ -124,7 +123,7 @@
 
 <SenjaEmbed id="aa054658-1e15-4d00-8920-91f424326c4e" />
 
-<AuthUI {supabase} isLogin={false} {handleSubmit} isLoading={loading} bind:formRef>
+<AuthUI isLogin={false} {handleSubmit} isLoading={loading} bind:formRef>
   <div class="mt-4 w-full">
     <p class="mb-6 text-lg font-semibold dark:text-white">Create a free account</p>
     <!-- <TextField

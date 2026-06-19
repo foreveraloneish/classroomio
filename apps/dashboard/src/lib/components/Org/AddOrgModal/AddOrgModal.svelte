@@ -54,41 +54,42 @@
       return;
     }
 
-    const { data: org, error } = await supabase
-      .from('organization')
-      .insert({
-        name: orgName,
-        siteName: siteName
-      })
-      .select();
-    console.log('Create organisation', org);
+    try {
+      // Create organization
+      const sessionRes = await fetch('/api/auth/session');
+      // Use session cookie/auth header provided by browser; auth endpoints on server will validate.
 
-    if (error) {
-      console.log('Error: create organisation', error);
-      errors.siteName = 'Sitename already exists.';
-      loading = false;
-      return;
-    }
+      const createRes = await fetch('/api/org/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: orgName, siteName })
+      });
 
-    if (Array.isArray(org) && org.length) {
-      const orgData = org[0];
-      const { data, error } = await supabase
-        .from('organizationmember')
-        .insert({
-          organization_id: orgData.id,
-          profile_id: $profile.id,
-          role_id: 1
-        })
-        .select();
+      const created = await createRes.json();
 
-      console.log('Create organisation member', data);
+      if (!createRes.ok || !created.data) {
+        errors.siteName = 'Sitename already exists.';
+        loading = false;
+        return;
+      }
 
-      if (error) {
-        console.log('Error: create organisation member', error);
+      // Join created org as owner
+      const joinRes = await fetch('/api/org/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organization_id: created.data[0].id, role_id: 1 })
+      });
+
+      const joinResult = await joinRes.json();
+
+      if (!joinRes.ok || !joinResult.data) {
         errors.siteName = $t('add_org.error_organization');
-
         // Delete organization so it can be recreated.
-        await supabase.from('organization').delete().match({ siteName });
+        await fetch('/api/org/create', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ siteName })
+        });
         loading = false;
         return;
       }
@@ -97,8 +98,11 @@
       await getOrganizations($profile.id);
       goto(`/org/${siteName}`);
       $newOrgModal.open = false;
-
       resetForm();
+    } catch (err) {
+      console.error('Error creating org', err);
+      errors.siteName = $t('add_org.error_organization');
+      loading = false;
     }
   }
 

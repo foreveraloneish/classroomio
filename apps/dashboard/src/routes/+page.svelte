@@ -5,14 +5,11 @@
   import MachineLearningModelIcon from 'carbon-icons-svelte/lib/MachineLearningModel.svelte';
   import TextField from '$lib/components/Form/TextField.svelte';
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import { validateEmail } from '$lib/utils/functions/validateEmail';
 
   let email = '';
   let isAdding = false;
   let success = false;
-
-  const supabase = getSupabase();
   const animate = 'transition delay-75 duration-300 ease-in-out';
   const areas = [
     {
@@ -36,7 +33,11 @@
     if (!email || !validateEmail(email)) return;
     isAdding = true;
 
-    await supabase.from('waitinglist').insert([{ email }]);
+    await fetch('/api/waitinglist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+    });
 
     success = true;
 

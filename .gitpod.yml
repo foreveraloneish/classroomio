@@ -9,13 +9,11 @@ tasks:
       cd ../dashboard &&
       cp .env.example .env &&
       cd ../.. &&
-      pnpx supabase start
     command: |
-      SUPABASE_ANON_KEY=$(pnpx supabase status | grep "anon key" | awk '{print $3}' | tr -d '\\n') &&
-      cd apps/dashboard &&
-      sed -i "s/PUBLIC_SUPABASE_ANON_KEY=.*/PUBLIC_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY/g" .env &&
-      sed -i "s/PRIVATE_SUPABASE_SERVICE_ROLE=.*/PRIVATE_SUPABASE_SERVICE_ROLE=$SUPABASE_SERVICE_ROLE/g" .env &&
-      cd ../classroomio-com &&
+      cd apps/classroomio-com &&
+      cp .env.example .env || true &&
+      cd ../dashboard &&
+      cp .env.example .env || true &&
       cd ../.. &&
       pnpm dev
 

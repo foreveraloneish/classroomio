@@ -1,79 +1,72 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
-import { STATUS } from '$lib/utils/constants/course';
-import { checkUserCoursePermissions } from '$lib/utils/functions/permissions';
+import { prisma } from '@cio/database';
+import { auth } from '$lib/auth';
 
-const COURSE_SELECT_QUERY = `
-  id, title, type, description, overview, logo, is_published, version, group_id,
-  slug, cost, currency, metadata, is_certificate_downloadable, certificate_theme,
-  lesson_section(id, title, order, created_at),
-  lessons:lesson(
-    id, title, public, lesson_at, is_unlocked, order, created_at, section_id,
-    note, videos, slide_url, call_url, totalExercises:exercise(count), 
-    totalComments:lesson_comment(count), profile:teacher_id(id, avatar_url, fullname),
-    lesson_completion(id, profile_id, is_complete)
-  ),
-  attendance:group_attendance(*),
-  polls:apps_poll(status)
-`;
+function toJSON(data: any) {
+    return JSON.parse(JSON.stringify(data, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+    ));
+}
 
-const GROUP_MEMBERS_SELECT = `
-  id,
-  members:groupmember(
-    id, role_id, profile_id, email, created_at, assigned_student_id, profile(*)
-  )
-`;
+// Mimic the nested selection
+async function getCourse(courseId: string) {
+  const course = await prisma.course.findUnique({
+    where: {
+      id: courseId,
+      status: 'ACTIVE'
+    },
+    include: {
+        lesson_sections: {
+            select: { id: true, title: true, order: true, created_at: true }
+        },
+        lessons: {
+            include: {
+                _count: {
+                    select: {
+                        exercises: true,
+                        comments: true
+                    }
+                },
+                teacher: {
+                    select: { id: true, avatar_url: true, fullname: true } // Assuming User has these
+                },
+                completions: true
+            }
+        },
+        attendance: true,
+        polls: { select: { status: true } }
+    }
+  });
 
-async function getCourse(supabase: any, courseId: string) {
-  const { data: course, error } = await supabase
-    .from('course')
-    .select(COURSE_SELECT_QUERY)
-    .eq('id', courseId)
-    .eq('status', STATUS[STATUS.ACTIVE])
-    .single();
-
-  if (error || !course) {
+  if (!course) {
     throw new Error('Course not found');
   }
 
-  return course;
-}
+  // Transform to match legacy structure if needed, or update frontend to use new structure.
+  // The frontend expects:
+  // lessons: [ { ..., totalExercises: count, totalComments: count, lesson_completion: [...] } ]
+  // Prisma returns:
+  // lessons: [ { ..., _count: { exercises: count, comments: count }, completions: [...] } ]
 
-async function getGroupMembers(
-  supabase: any,
-  groupId: string,
-  isStudent: boolean,
-  userMembership: any
-) {
-  if (isStudent) {
-    return {
-      id: groupId,
-      members: userMembership ? [userMembership] : []
-    };
-  }
-
-  const { data: group, error } = await supabase
-    .from('group')
-    .select(GROUP_MEMBERS_SELECT)
-    .eq('id', groupId)
-    .single();
-
-  if (error) {
-    throw new Error('Error fetching group members');
-  }
-
-  return {
-    id: group.id,
-    members: group.members
+  const transformedCourse = {
+      ...course,
+      lessons: course.lessons.map(l => ({
+          ...l,
+          totalExercises: [{ count: l._count.exercises }],
+          totalComments: [{ count: l._count.comments }],
+          lesson_completion: l.completions,
+          profile: l.teacher
+      }))
   };
+
+  return transformedCourse;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-  const userId = request.headers.get('user_id');
-  if (!userId) {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) return json({ success: false, message: 'Unauthorized' }, { status: 401 });
+  const userId = session.user.id;
 
   const { courseId } = await request.json();
   if (!courseId) {
@@ -81,33 +74,60 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   try {
-    const supabase = getServerSupabase();
-    const course = await getCourse(supabase, courseId);
+    const course = await getCourse(courseId);
 
-    const { hasAccess, isStudent, userMembership } = await checkUserCoursePermissions(
-      supabase,
-      userId,
-      course.group_id
-    );
-
-    if (!hasAccess) {
-      return json(
-        {
-          success: false,
-          message: 'Access denied. User is not a member of this course.',
-          data: null
+    // Check permissions
+    // Find group member
+    const membership = await prisma.groupMember.findFirst({
+        where: {
+            group_id: course.group_id as string, // group_id should exist on course
+            profile_id: userId
         },
-        { status: 403 }
-      );
+        include: {
+            user: true
+        }
+    });
+
+    if (!membership) {
+        return json({
+            success: false,
+            message: 'Access denied. User is not a member of this course.',
+            data: null
+        }, { status: 403 });
     }
 
-    const group = await getGroupMembers(supabase, course.group_id, isStudent, userMembership);
+    const isStudent = Number(membership.role_id) === 3; // Assuming 3 is Student
+
+    let groupData;
+    if (isStudent) {
+        groupData = {
+            id: course.group_id,
+            members: [membership]
+        };
+    } else {
+        const group = await prisma.group.findUnique({
+            where: { id: course.group_id as string },
+            include: {
+                members: {
+                    include: { user: true }
+                }
+            }
+        });
+        groupData = {
+            id: group?.id,
+            members: group?.members.map(m => ({
+                ...m,
+                profile: m.user
+            }))
+        };
+    }
 
     return json({
       success: true,
-      data: { ...course, group }
+      data: toJSON({ ...course, group: groupData })
     });
   } catch (error) {
+    console.error(error);
     const message = error instanceof Error ? error.message : 'Internal server error';
     const status = message === 'Course not found' ? 404 : 500;
 

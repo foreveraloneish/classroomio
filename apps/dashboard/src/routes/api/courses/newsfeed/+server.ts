@@ -1,80 +1,104 @@
-import type { RequestHandler } from './$types';
+import { prisma } from '@cio/database';
 import { json } from '@sveltejs/kit';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
-import { checkUserCoursePermissions } from '$lib/utils/functions/permissions';
+import { auth } from '$lib/auth';
 
-export const GET: RequestHandler = async ({ request, url }) => {
-  const courseId = url.searchParams.get('courseId');
-  const userId = request.headers.get('user_id');
+function toJSON(data: any) {
+    return JSON.parse(JSON.stringify(data, (key, value) =>
+        typeof value === 'bigint' ? value.toString() : value
+    ));
+}
 
-  if (!userId) {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET({ request, url }) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!courseId) {
-    return json({ success: false, message: 'Course ID is required' }, { status: 400 });
-  }
+    const courseId = url.searchParams.get('courseId');
+    if (!courseId) return json({ error: 'Course ID required' }, { status: 400 });
 
-  try {
-    const supabase = getServerSupabase();
-
-    const hasPermission = await checkUserCoursePermissions(supabase, userId, courseId);
-
-    if (!hasPermission) {
-      return json(
-        {
-          success: false,
-          message: 'Access denied. User is not a member of this course or organization.'
+    const feeds = await prisma.courseNewsfeed.findMany({
+        where: { course_id: courseId },
+        include: {
+            author: {
+                include: { user: true }
+            },
+            comments: {
+                include: {
+                    author: {
+                        include: { user: true }
+                    }
+                },
+                orderBy: { created_at: 'asc' }
+            }
         },
-        { status: 403 }
-      );
-    }
-
-    // Fetch newsfeeds
-    const { data, error } = await supabase
-      .from('course_newsfeed')
-      .select(
-        `
-        id,
-        created_at,
-        content,
-        course_id,
-        author:groupmember(
-          profile(
-            id,
-            fullname,
-            avatar_url
-          )
-        ),
-        reaction,
-        is_pinned,
-        comment:course_newsfeed_comment(
-            id,
-            created_at,
-            author:groupmember( profile(id, fullname, avatar_url) ),
-            content,
-            course_newsfeed_id)
-        `
-      )
-      .match({ course_id: courseId })
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new Error('Error fetching newsfeeds');
-    }
-
-    return json({
-      success: true,
-      data: data || []
+        orderBy: { created_at: 'desc' }
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    return json(
-      {
-        success: false,
-        message
-      },
-      { status: 500 }
-    );
-  }
-};
+
+    // Transform to match frontend expectations
+    const transformed = feeds.map(feed => ({
+        ...feed,
+        author: {
+            profile: feed.author?.user
+        },
+        comment: feed.comments.map(c => ({
+            ...c,
+            author: {
+                profile: c.author?.user
+            }
+        })),
+        is_pinned: feed.is_pinned
+    }));
+
+    return json({ success: true, data: toJSON(transformed), error: null });
+}
+
+export async function POST({ request }) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await request.json();
+    const { content, author_id, course_id, reaction } = body;
+
+    const feed = await prisma.courseNewsfeed.create({
+        data: {
+            content,
+            author_id,
+            course_id,
+            reaction: reaction || { like: [] }
+        }
+    });
+
+    return json({ success: true, data: [toJSON(feed)], error: null });
+}
+
+export async function PUT({ request }) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await request.json();
+    const { id, content, is_pinned, reaction } = body;
+
+    const data: any = {};
+    if (content !== undefined) data.content = content;
+    if (is_pinned !== undefined) data.is_pinned = is_pinned;
+    if (reaction !== undefined) data.reaction = reaction;
+
+    const feed = await prisma.courseNewsfeed.update({
+        where: { id },
+        data
+    });
+
+    return json({ success: true, data: [toJSON(feed)], error: null });
+}
+
+export async function DELETE({ request, url }) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return json({ error: 'Unauthorized' }, { status: 401 });
+
+    const id = url.searchParams.get('id');
+    if (!id) return json({ error: 'ID required' }, { status: 400 });
+
+    await prisma.courseNewsfeedComment.deleteMany({ where: { course_newsfeed_id: id } });
+    await prisma.courseNewsfeed.delete({ where: { id } });
+
+    return json({ success: true, error: null });
+}

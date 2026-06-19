@@ -12,7 +12,6 @@
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
   import RoleBasedSecurity from '$lib/components/RoleBasedSecurity/index.svelte';
   import { snackbar } from '$lib/components/Snackbar/store';
-  import { supabase } from '$lib/utils/functions/supabase';
   import { t } from '$lib/utils/functions/translations';
   import {
     createComment,
@@ -93,12 +92,12 @@
       [reactionType]: reactedAuthorIds
     };
 
-    const response = await supabase
-      .from('course_newsfeed')
-      .update({
-        reaction: reactedFeed.reaction
-      })
-      .eq('id', feedId);
+    const res = await fetch('/api/courses/newsfeed', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: feedId, reaction: reactedFeed.reaction })
+    });
+    const response = await res.json();
 
     if (response.error) {
       return snackbar.error('snackbar.course.error.reaction_error');

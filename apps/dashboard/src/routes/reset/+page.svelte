@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import TextField from '$lib/components/Form/TextField.svelte';
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
-  import { getSupabase } from '$lib/utils/functions/supabase';
+  import { authClient } from '$lib/auth-client';
   import {
     resetValidation,
     getConfirmPasswordError,
@@ -11,7 +11,6 @@
   import { RESET_FIELDS } from '$lib/utils/constants/authentication';
   import AuthUI from '$lib/components/AuthUI/index.svelte';
 
-  let supabase = getSupabase();
   let fields = Object.assign({}, RESET_FIELDS);
   let loading = false;
   let success = false;
@@ -30,8 +29,8 @@
 
     try {
       loading = true;
-      const { data, error } = await supabase.auth.updateUser({
-        password: fields.password
+      const { data, error } = await authClient.resetPassword({
+        newPassword: fields.password
       });
       console.log('data', data);
       if (error) throw error;
@@ -55,7 +54,6 @@
 </svelte:head>
 
 <AuthUI
-  {supabase}
   isLogin={false}
   {handleSubmit}
   showOnlyContent={true}

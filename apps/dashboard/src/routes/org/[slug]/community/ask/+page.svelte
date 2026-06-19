@@ -50,28 +50,27 @@
       return;
     }
 
-    const { data: question, error } = await supabase
-      .from('community_question')
-      .insert({
-        title: fields.title,
-        body: fields.body,
-        organization_id: $currentOrg.id,
-        author_profile_id: $profile.id,
-        votes: 0,
-        slug: generateSlug(fields.title),
-        course_id: fields.courseId
-      })
-      .select();
+    try {
+      const res = await fetch('/api/community/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: fields.title, body: fields.body, organization_id: $currentOrg.id, author_profile_id: $profile.id, votes: 0, slug: generateSlug(fields.title), course_id: fields.courseId })
+      });
 
-    if (error) {
-      console.error('Error: asking question', error);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error('Error: asking question', result);
+        snackbar.error('snackbar.community.error.try_again');
+      } else {
+        const slug = result.data[0]?.slug;
+        console.log('Success: asking question', result.data, slug);
+        snackbar.success('snackbar.community.success.question_submitted');
+        goto(`${$currentOrgPath}/community/${slug}`);
+      }
+    } catch (err) {
+      console.error('Error: asking question', err);
       snackbar.error('snackbar.community.error.try_again');
-    } else {
-      const slug = question[0]?.slug;
-
-      console.log('Success: asking question', question, slug);
-      snackbar.success('snackbar.community.success.question_submitted');
-      goto(`${$currentOrgPath}/community/${slug}`);
     }
   }
 

@@ -2,9 +2,9 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import PrimaryButton from '$lib/components/PrimaryButton/index.svelte';
-  import { getSupabase } from '$lib/utils/functions/supabase';
   import AuthUI from '$lib/components/AuthUI/index.svelte';
   import { currentOrg } from '$lib/utils/store/org';
+  import { authClient } from '$lib/auth-client';
   import { setTheme } from '$lib/utils/functions/theme';
   import { addGroupMember } from '$lib/utils/services/courses';
   import type { CurrentOrg } from '$lib/utils/types/org.js';
@@ -20,7 +20,6 @@
 
   export let data;
 
-  let supabase = getSupabase();
   let loading = false;
 
   let disableSubmit = false;
@@ -34,81 +33,53 @@
       return goto(`/signup?redirect=${$page.url?.pathname || ''}`);
     }
 
-    const { data: courseData, error } = await supabase
-      .from('course')
-      .select('group_id')
-      .eq('id', data.id)
-      .single();
+    // Call API to join course
+    const res = await fetch('/api/course/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            courseId: data.id,
+            roleId: ROLE.STUDENT
+        })
+    });
+    const { data: memberData, error, teachers } = await res.json();
 
-    console.log({ courseData });
-    if (!courseData?.group_id) {
-      console.error('error getting group', error);
-      return;
-    }
-
-    const member = {
-      profile_id: $profile.id,
-      group_id: courseData.group_id,
-      role_id: ROLE.STUDENT
-    };
-
-    const teacherMembers = await supabase
-      .from('groupmember')
-      .select('id, profile(email)')
-      .eq('group_id', courseData.group_id)
-      .eq('role_id', ROLE.TUTOR)
-      .returns<
-        {
-          id: string;
-          profile: {
-            email: string;
-          };
-        }[]
-      >();
-
-    const teachers: Array<string> =
-      teacherMembers.data?.map((teacher) => {
-        return teacher.profile?.email || '';
-      }) || [];
-
-    addGroupMember(member).then((addedMember) => {
-      if (addedMember.error) {
-        console.error('Error adding student to group', courseData.group_id, addedMember.error);
+    if (error) {
+        console.error('Error joining course', error);
         snackbar.error('snackbar.invite.failed_join');
-
-        // Full page load to lms if error joining, probably user already joined
         window.location.href = '/lms';
         return;
-      }
+    }
 
-      capturePosthogEvent('student_joined_course', {
-        course_name: data.name,
-        student_id: $profile.id,
-        student_email: $profile.email
-      });
-
-      // Send email welcoming student to the course
-      triggerSendEmail(NOTIFICATION_NAME.STUDENT_COURSE_WELCOME, {
-        to: $profile.email,
-        orgName: data.currentOrg?.name,
-        courseName: data.name
-      });
-
-      // Send notification to all teacher(s) that a student has joined the course.
-      Promise.all(
-        teachers.map((email) =>
-          triggerSendEmail(NOTIFICATION_NAME.TEACHER_STUDENT_JOINED, {
-            to: email,
-            courseName: data.name,
-            studentName: $profile.fullname,
-            studentEmail: $profile.email
-          })
-        )
-      );
-
-      // go to lms
-      return goto('/lms');
+    capturePosthogEvent('student_joined_course', {
+      course_name: data.name,
+      student_id: $profile.id,
+      student_email: $profile.email
     });
+
+    // Send email welcoming student to the course
+    triggerSendEmail(NOTIFICATION_NAME.STUDENT_COURSE_WELCOME, {
+      to: $profile.email,
+      orgName: data.currentOrg?.name,
+      courseName: data.name
+    });
+
+    // Send notification to all teacher(s)
+    if (teachers && teachers.length) {
+        Promise.all(
+            teachers.map((email: string) =>
+            triggerSendEmail(NOTIFICATION_NAME.TEACHER_STUDENT_JOINED, {
+                to: email,
+                courseName: data.name,
+                studentName: $profile.fullname,
+                studentEmail: $profile.email
+            })
+            )
+        );
+    }
+
+    // go to lms
+    return goto('/lms');
   }
 
   function setCurOrg(cOrg: CurrentOrg) {
@@ -118,10 +89,8 @@
 
   onMount(async () => {
     // check if user has session, if not redirect to sign up with redirect back to this page
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-    if (!session) {
+    const session = await authClient.getSession();
+    if (!session.data) {
       return goto(`/login?redirect=${$page.url?.pathname || ''}`);
     }
 
@@ -136,7 +105,6 @@
 </svelte:head>
 
 <AuthUI
-  {supabase}
   isLogin={false}
   {handleSubmit}
   isLoading={loading || !$profile.id}

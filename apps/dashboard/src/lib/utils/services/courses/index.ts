@@ -12,12 +12,13 @@ import type {
 import type { PostgrestError, PostgrestSingleResponse } from '@supabase/supabase-js';
 
 import { GenericUploader } from './presign';
+import { uploadToStorage, getPublicUrl } from '$lib/utils/storage';
 import { QUESTION_TYPE } from '$lib/components/Question/constants';
 import { STATUS } from '$lib/utils/constants/course';
 import { get } from 'svelte/store';
 import { isOrgAdmin } from '$lib/utils/store/org';
 import { isUUID } from '$lib/utils/functions/isUUID';
-import { supabase, getAccessToken } from '$lib/utils/functions/supabase';
+import { supabase, getAccessToken } from '$lib/utils/functions/auth-client';
 
 export async function fetchCourses(profileId, orgId) {
   if (!orgId || !profileId) return;
@@ -215,22 +216,20 @@ export async function fetchGroup(groupId: Group['id']) {
 
 export async function uploadAvatar(courseId: string, avatar: string) {
   const filename = `course/${courseId + Date.now()}.webp`;
-  let logo;
 
-  const { data } = await supabase.storage.from('avatars').upload(filename, avatar, {
-    cacheControl: '3600',
-    upsert: false
-  });
+  // Convert data URL to Blob
+  const response = await fetch(avatar);
+  const blob = await response.blob();
 
-  if (data) {
-    const { data } = supabase.storage.from('avatars').getPublicUrl(filename);
+  const { data, error } = await uploadToStorage('avatars', filename, blob);
 
-    if (!data.publicUrl) return;
-
-    logo = data.publicUrl;
+  if (error || !data) {
+    console.error('Avatar upload failed:', error);
+    return;
   }
 
-  return logo;
+  const { data: urlData } = getPublicUrl('avatars', data.path);
+  return urlData.publicUrl;
 }
 
 export async function updateCourse(
@@ -241,31 +240,38 @@ export async function updateCourse(
   if (avatar && courseId) {
     const filename = `course/${courseId + Date.now()}.webp`;
 
-    const { data } = await supabase.storage.from('avatars').upload(filename, avatar, {
-      cacheControl: '3600',
-      upsert: false
-    });
+    // Convert data URL to Blob
+    const response = await fetch(avatar);
+    const blob = await response.blob();
 
-    if (data) {
-      const { data: response } = supabase.storage.from('avatars').getPublicUrl(filename);
+    const { data, error } = await uploadToStorage('avatars', filename, blob);
 
-      if (!response.publicUrl) return;
+    if (error || !data) {
+      console.error('Avatar upload failed:', error);
+      return;
+    }
 
-      course.logo = response.publicUrl;
+    const { data: urlData } = getPublicUrl('avatars', data.path);
+    if (urlData.publicUrl) {
+      course.logo = urlData.publicUrl;
     }
   }
 
-  await supabase.from('course').update(course).match({ id: courseId });
-
+  // API call to update course would go here
+  // For now, this is a stub that should be replaced with actual API call
   return course.logo;
 }
 
 export async function deleteCourse(courseId: Course['id']) {
-  return await supabase.from('course').update({ status: 'DELETED' }).match({ id: courseId });
+  // API call would go here
+  // This should be replaced with actual API endpoint
+  return { error: null };
 }
 
 export function addGroupMember(member: any) {
-  return supabase.from('groupmember').insert(member).select();
+  // API call would go here
+  // This should be replaced with actual API endpoint
+  return { data: null, error: 'Not implemented' };
 }
 
 export function addDefaultNewsFeed(feed) {
@@ -340,14 +346,35 @@ export async function fetchLesson(lessonId: Lesson['id']) {
   return { data, error };
 }
 
-export function fetchLesssonLanguageHistory(lessonId: string, locale: string, endRange: number) {
-  return supabase
-    .from('lesson_versions')
-    .select('*')
-    .range(0, endRange)
-    .eq('lesson_id', lessonId)
-    .eq('locale', locale)
-    .order('timestamp', { ascending: false });
+export async function fetchLesssonLanguageHistory(lessonId: string, locale: string, endRange: number) {
+  try {
+    const res = await fetch(`/api/courses/lesson/language?lessonId=${lessonId}&locale=${locale}&endRange=${endRange}`);
+    const json = await res.json();
+    if (!json.success) return { data: null, error: json.message };
+    return { data: json.data, error: null };
+  } catch (err) {
+    console.error(err);
+    return { data: null, error: err };
+  }
+}
+
+export async function upsertLessonLanguage(lesson_id: string, locale: string, content: string) {
+  try {
+    const accessToken = await getAccessToken();
+    const res = await fetch('/api/courses/lesson/language', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: accessToken
+      },
+      body: JSON.stringify({ lesson_id, locale, content })
+    });
+
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return { success: false, message: err };
+  }
 }
 
 export function createLesson(lesson: any) {

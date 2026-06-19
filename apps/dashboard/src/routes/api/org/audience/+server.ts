@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
+import { prisma } from '@cio/database';
 
 export const GET: RequestHandler = async ({ request, url }) => {
   const userId = request.headers.get('user_id');
@@ -15,16 +15,10 @@ export const GET: RequestHandler = async ({ request, url }) => {
   }
 
   try {
-    const supabase = getServerSupabase();
-
     // Check if user has access to this organization
-    const { data: orgMember } = await supabase
-      .from('organizationmember')
-      .select('role_id')
-      .eq('organization_id', orgId)
-      .eq('profile_id', userId)
-      .in('role_id', [1, 2]) // Admin or Member roles
-      .single();
+    const orgMember = await prisma.organizationMember.findFirst({
+      where: { organization_id: orgId, profile_id: userId, role_id: { in: [1, 2] } }
+    });
 
     if (!orgMember) {
       return json(
@@ -37,41 +31,25 @@ export const GET: RequestHandler = async ({ request, url }) => {
     }
 
     // Get all students who are participants in any course belonging to an org
-    const { data, error } = await supabase
-      .from('profile')
-      .select(
-        `
-        id,
-        fullname,
-        email,
-        avatar_url,
-        created_at,
-        groupmember!inner(
-          role_id,
-          group_id:group!inner(
-            organization_id
-          )
-        )
-      `
-      )
-      .eq('groupmember.group.organization_id', orgId)
-      .eq('groupmember.role_id', 3); // STUDENT role
+    const students = await prisma.groupMember.findMany({
+      where: {
+        role_id: 3,
+        group: { organization_id: orgId }
+      },
+      include: { user: true }
+    });
 
-    if (error) {
-      throw new Error('Error fetching organization audience');
-    }
-
-    const audience = (data || []).map((profile) => ({
-      id: profile.id,
-      name: profile.fullname,
-      email: profile.email,
-      avatar_url: profile.avatar_url,
-      date_joined: new Date(profile.created_at).toDateString()
+    const audience = students.map((m) => ({
+      id: m.user?.id || m.profile_id,
+      name: m.user?.fullname || '',
+      email: m.user?.email || m.email || '',
+      avatar_url: m.user?.avatar_url || '',
+      date_joined: m.user?.createdAt ? new Date(m.user?.createdAt).toDateString() : ''
     }));
 
     return json({
       success: true,
-      audience: audience
+      audience
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal server error';

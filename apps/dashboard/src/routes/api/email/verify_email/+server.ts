@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import sendEmail from '$mail/sendEmail';
-import { getServerSupabase } from '$lib/utils/functions/supabase.server';
+import { prisma } from '@cio/database';
+import crypto from 'crypto';
 
 export async function POST({ fetch, request }) {
   const { to, profileId, fullname } = await request.json();
@@ -13,15 +14,10 @@ export async function POST({ fetch, request }) {
     );
   }
 
-  const supabase = getServerSupabase();
-  const { data: profile, error: profileError } = await supabase
-    .from('profile')
-    .select('id, email, fullname')
-    .eq('id', profileId)
-    .single();
+  const profile = await prisma.user.findUnique({ where: { id: profileId } });
 
-  if (profileError || !profile) {
-    console.error('Profile verification failed:', profileError);
+  if (!profile) {
+    console.error('Profile verification failed: profile not found');
     return json({ success: false, message: 'Invalid profile' }, { status: 403 });
   }
 
@@ -38,28 +34,25 @@ export async function POST({ fetch, request }) {
     'unknown';
 
   // Generate secure verification token
-  const { data: tokenResult, error: tokenError } = await supabase.rpc(
-    'create_email_verification_token',
-    {
-      profile_id_input: profileId,
-      email_input: to,
-      creator_ip: clientIP
-    }
-  );
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  if (tokenError || !tokenResult?.success) {
-    console.error('Token generation failed:', tokenError, tokenResult);
-    return json(
-      {
-        success: false,
-        message: tokenResult?.message || 'Failed to generate verification token'
-      },
-      { status: 500 }
-    );
+  try {
+    await prisma.verification.create({
+      data: {
+        id: token,
+        identifier: profileId,
+        value: token,
+        expiresAt: expiresAt
+      }
+    });
+  } catch (err) {
+    console.error('Token generation failed:', err);
+    return json({ success: false, message: 'Failed to generate verification token' }, { status: 500 });
   }
 
   const origin = request.headers.get('origin');
-  const verificationLink = `${origin}/api/verify?token=${encodeURIComponent(tokenResult.token)}`;
+  const verificationLink = `${origin}/api/verify?token=${encodeURIComponent(token)}`;
 
   const emailData = [
     {
@@ -102,6 +95,6 @@ export async function POST({ fetch, request }) {
   return json({
     success: true,
     message: 'Verification email sent successfully',
-    expiresAt: tokenResult.expires_at
+    expiresAt
   });
 }
